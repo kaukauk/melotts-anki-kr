@@ -215,7 +215,7 @@ deck-config-maximum-answer-secs-tooltip =
     
     「回答タイマーを表示する」オプションがオンの場合、この秒数に達するとタイマーのカウントアップが停止します。
 deck-config-show-answer-timer-tooltip = カード学習画面に、表示中のカードの回答秒数をカウントするタイマーを表示します。
-deck-config-stop-timer-on-answer = 解答表示でタイマーを停止する
+deck-config-stop-timer-on-answer = 解答を表示したときに、タイマーのカウントを停止する
 deck-config-stop-timer-on-answer-tooltip =
     解答側を表示した時点でタイマーのカウントアップを停止するか、それとも続行するかを設定します。
     この設定はあくまでタイマーのカウント表示についてのものであり、カードへの回答秒数についての統計には影響しません。つまり、タイマーのカウントアップを停止した場合でも、その後、回答ボタンを押すまでの秒数は引き続き計測されます。
@@ -329,6 +329,7 @@ deck-config-good-above-easy = 「簡単」と回答後の最初の復習間隔�
 deck-config-relearning-steps-above-minimum-interval = 復習再開時の復習間隔の下限は、最後の再習得ステップの間隔より長くする（少なくとも同じにする）ことをお勧めします。
 deck-config-maximum-answer-secs-above-recommended = 回答時間を短く保つほうが、効率的な学習スケジュール作成に役立ちます。
 deck-config-too-short-maximum-interval = 復習間隔の上限は、6か月（＝180日）以上の値にすることをおすすめします。
+deck-config-ignore-before-info = FSRSパラメータの最適化のために全{ $totalCards }枚中のおよそ{ $included }枚のカードを参照します。
 
 ## Selecting a deck
 
@@ -372,6 +373,7 @@ deck-config-desired-retention-tooltip =
     この値を下げると、より少ない頻度で、つまり、より長めの間隔でカードを表示し、結果として、あなたは答えを比較的忘れやすくなると予想されます。
     
     この値の調整は、控えめに、慎重に行ってください。値を上げすぎると、学習量が大幅に増えて重荷になってしまいますし、値を下げすぎても、答えを忘れてしまうカードが多くなって、かえって学習意欲が下がってしまうかもしれません。
+deck-config-desired-retention-tooltip2 = この値の調整中に表示される学習負荷についての比較情報（例：「変更後の学習負荷は、変更前(90%)の場合のおよそ0.87倍となります」）の数値は比較的おおまかな概算によるものです。より精度の高い情報を確認したい場合は、シミュレータを使用してください。
 deck-config-historical-retention-tooltip =
     復習履歴の一部が欠落している場合、FSRSはその部分を仮のデータで補足する必要があります。デフォルトでは、その期間の復習の正答率は90％だったと仮定します。もし、実際の正答率は90%とはかなり異なっていた（もっと高かった、またはもっと低かった）と思う場合は、このオプションの値を調整することで、その欠落部分をより実際に近いデータで補足することができます。
     
@@ -399,7 +401,7 @@ deck-config-reschedule-cards-on-change-tooltip =
 deck-config-reschedule-cards-warning =
     目標正答率によっては、各カードの復習間隔が大幅に短縮され、大量のカードが復習期日に到達済みになる（＝現在の課題が急増する）可能性があるため、初めてSM2スケジューラーからFSRSに切り替える際にこのオプションをオンにすることはおすすめしません。
     
-    このオプションを使用すると、カード情報に変更履歴が追加され、コレクションのサイズが増加するため、頻繁な使用もおすすめしません。
+    また、このオプションを使用するたびに、カード情報に変更履歴が追加され、コレクションのサイズが増加するため、頻繁な使用もおすすめしません。
 deck-config-ignore-before-tooltip-2 =
     このオプションがオンの場合、FSRSパラメータ値を最適化する際、指定日より前に復習したことのあるカードを無視します。
     
@@ -441,8 +443,9 @@ deck-config-desired-retention-below-optimal = 現在、この値よりも低い�
 # diagram (Deck options -> FSRS) showing the total number of
 # cards that can be recalled or retrieved on a specific date.
 deck-config-fsrs-simulator-experimental = FSRSシミュレータ（実験的機能）
-deck-config-fsrs-simulate-desired-retention-experimental = FSRS目標正答率シミュレーター（実験的機能）
+deck-config-fsrs-simulate-desired-retention-experimental = 目標正答率ｺｽﾊﾟ比較ｼﾐｭﾚｰﾀ（実験的機能）
 deck-config-fsrs-simulate-save-preset = 「最適化」オプション（または手入力）によってFSRSパラメータが変更されています。このオプションを使用する前に、このプリセットを保存してください。
+deck-config-fsrs-desired-retention-help-me-decide-experimental = 正答率ｺｽﾊﾟ比較ｼﾐｭﾚｰﾀ（実験的機能）
 deck-config-additional-new-cards-to-simulate = 新規カード追加枚数
 deck-config-simulate = ｼﾐｭﾚｰﾄ
 deck-config-clear-last-simulate = 直近のｼﾐｭﾚｰﾄ結果を消去
@@ -451,10 +454,14 @@ deck-config-advanced-settings = 高度な設定
 deck-config-smooth-graph = グラフをスムーズにする
 deck-config-suspend-leeches = 「leech」（苦戦、習得困難）タグの付いたカードを休止する
 deck-config-save-options-to-preset = 変更をﾌﾟﾘｾｯﾄに反映
+deck-config-save-options-to-preset-confirm = 現在このシミュレーターの各オプションで指定している内容と同じになるよう、元のプリセットの各オプションの既存の設定内容を変更します。よろしいですか？
 # Radio button in the FSRS simulation diagram (Deck options -> FSRS) selecting
 # to show the total number of cards that can be recalled or retrieved on a
 # specific date.
-deck-config-fsrs-simulator-radio-memorized = 記憶保持
+deck-config-fsrs-simulator-radio-memorized = 記憶維持
+deck-config-fsrs-simulator-radio-ratio = 1枚あたりの記憶維持コスト
+# $time here is pre-formatted e.g. "10 Seconds" 
+deck-config-fsrs-simulator-ratio-tooltip = 1枚あたり { $time } のコスト（学習時間）で、指定期間の間、記憶を維持
 
 ## Messages related to the FSRS scheduler’s health check. The health check determines whether the correlation between FSRS predictions and your memory is good or bad. It can be optionally triggered as part of the "Optimize" function.
 
@@ -462,20 +469,17 @@ deck-config-fsrs-simulator-radio-memorized = 記憶保持
 deck-config-health-check = 最適化を実行する際にFSRSパラメータの信頼性もチェック
 # Message box showing the result of the health check
 deck-config-fsrs-bad-fit-warning =
-    FSRSは今のところ、あなた個人の記憶の今後の推移について、信頼性の高い予測を行うことが困難です。
-    （これまでの記憶の推移について、信頼性の高いデータが蓄積されていないと判断されるため。）
+    FSRSは今のところ、あなた個人の記憶の今後の推移について、信頼性の高い予測を行うことが困難です。これは、あなた個人の記憶のこれまでの推移について、信頼性の高いデータが蓄積されていると判断できないためです。
     
     【推奨事項】
-    - カードの復習を始める前に、そのカードの内容を理解（習得）する。（カードの内容を理解（習得）していないうちは、そのカードの復習を始めない。）
-    - 回答ボタンを選択する際は、一貫した基準によって選択する。
-    - 回答「難しい」は、「正しい答えを思い出せたが、思い出すのが難しかった」場合に選択する。正しい答えを思い出せなかった場合には「難しい」ではなく「もう一度」を選択する。
-    - 「leech」（苦戦、習得困難）タグの付いたカードは、より記憶しやすい内容に改善するか、休止する
+    ・カードの復習を始める前に、そのカードの内容を理解（習得）する。（カードの内容を理解（習得）していないうちは、そのカードの復習を始めない。）
+    ・回答ボタンを選択する際は、一貫した基準によって選択する。
+    ・回答「難しい」は、「正しい答えを思い出せたが、思い出すのが難しかった」場合に選択する。正しい答えを思い出せなかった場合には「難しい」ではなく「もう一度」を選択する。
+    ・「leech」（苦戦、習得困難）タグの付いたカードは、より記憶しやすい内容に改善するか、休止する
     
     これらの推奨事項を行うと、通常は数か月後には、より信頼性の高いFSRSパラメータを利用できるようになります。
 # Message box showing the result of the health check
-deck-config-fsrs-good-fit =
-    FSRSパラメータは、あなた個人の記憶の推移のために適切に調整されていると思われます。
-    （これまでの記憶の推移について、信頼性の高いデータが蓄積されていると判断されるため。）
+deck-config-fsrs-good-fit = 現在のFSRSパラメータは、あなた個人の記憶の推移に合わせて適切に調整されていると思われます。これは、あなた個人の記憶のこれまでの推移について、信頼性の高いデータが蓄積されていると判断されるためです。
 
 ## NO NEED TO TRANSLATE. This text is no longer used by Anki, and will be removed in the future.
 
@@ -490,6 +494,7 @@ deck-config-compute-optimal-retention-tooltip4 =
     「学習時間や学習回数が増えてもかまわないから、実際の正答率をさらに高くしたい」という場合は、この値よりも高い値を`目標正答率`として設定するのもよいでしょう。
     
     この値よりも低い値を`目標正答率`として設定するのはおすすめしません。復習間隔が大きくなりすぎて正答を思い出しにくくなり、かえって学習の負担が高くなると予想されるためです。
+deck-config-plotted-on-x-axis = NO NEED TO TRANSLATE. This text is no longer used by Anki, and will be removed in the future.
 deck-config-a-100-day-interval =
     { $days ->
         [one] 【参考】 たとえば、デフォルトの目標正答率だと復習間隔が100日になる場合、この目標正答率だと、その復習間隔は{ $days }日になります。
@@ -497,7 +502,7 @@ deck-config-a-100-day-interval =
     }
 deck-config-fsrs-simulator-y-axis-title-time = 各日の学習時間
 deck-config-fsrs-simulator-y-axis-title-count = 各日の学習回数
-deck-config-fsrs-simulator-y-axis-title-memorized = 記憶を保持できているカード数
+deck-config-fsrs-simulator-y-axis-title-memorized = 記憶を維持できているカード数
 deck-config-bury-siblings = Bury siblings
 deck-config-do-not-bury = Do not bury siblings
 deck-config-bury-if-new = Bury if new
@@ -530,6 +535,8 @@ deck-config-compute-optimal-retention-tooltip =
     推定される正答率は各項目に入力する値によって大きく変化します。推定値と0.9との差が著しく大きい場合は、予定の学習枚数に対して、予定の学習時間が少なすぎるか、または多すぎる可能性があります。
     
     この値は、あくまで学習プランの調整などのための参考値であり、`目標正答率`の欄でそのまま使用するための推奨値ではありません。
+deck-config-health-check-tooltip1 = NO NEED TO TRANSLATE. This text is no longer used by Anki, and will be removed in the future.
+deck-config-health-check-tooltip2 = NO NEED TO TRANSLATE. This text is no longer used by Anki, and will be removed in the future.
 deck-config-compute-optimal-retention = 有益な目標正答率の下限を推定
 deck-config-predicted-optimal-retention = 有益な目標正答率の下限: { $num }
 deck-config-weights-tooltip =

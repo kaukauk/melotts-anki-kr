@@ -74,8 +74,8 @@ statistics-notes =
 # a count of how many cards have been answered, eg "Total: 34 reviews"
 statistics-reviews =
     { $reviews ->
-        [one] { $reviews } איבער׳חזר׳ונג
-       *[other] { $reviews } איבער׳חזר׳ונגען
+        [one] { $reviews } אײַנ׳חזר׳ונג
+       *[other] { $reviews } אײַנ׳חזר׳ונגען
     }
 # This fragment of the tooltip in the FSRS simulation
 # diagram (Deck options -> FSRS) shows the total number of
@@ -83,7 +83,7 @@ statistics-reviews =
 statistics-memorized = { $memorized } קאַרטלעך אויסגעלערנט
 statistics-today-title = הײַנט
 statistics-today-again-count = ווידער-חשבון:
-statistics-today-type-counts = לערנענדיק: { $learnCount }, אײַנ׳חזר׳נדיק: { $reviewCount }, קריקלערנענדיק: { $relearnCount }, פֿילטרירטע: { $filteredCount }
+statistics-today-type-counts = געלערנט: { $learnCount }, אײַנגע׳חזר׳ט: { $reviewCount }, קריקגעלערנט: { $relearnCount }, פֿילטרירט: { $filteredCount }
 statistics-today-no-cards = קיין קאַרטל איז הײַנט נישט אײַנגע׳חזר׳ט געוואָרן.
 statistics-today-no-mature-cards = קיין דערוואַקסן קאַרטל איז הײַנט נישט אײַנגע׳חזר׳ט געוואָרן.
 statistics-today-correct-mature = ריכטיקע ענטפֿערס אויף דערוואַקסענע קאַרטלעך: { $correct }/{ $total } ({ $percent }%)
@@ -129,8 +129,8 @@ statistics-true-retention-mature = דערוואַקסענע
 statistics-true-retention-all = אַלע
 statistics-true-retention-today = הײַנט
 statistics-true-retention-yesterday = נעכטן
-statistics-true-retention-week = פֿאַריקע וואָך
-statistics-true-retention-month = פֿאַריקע חודש
+statistics-true-retention-week = פֿאָריקע וואָך
+statistics-true-retention-month = פֿאָריקע חודש
 statistics-true-retention-year = פֿאַר אַ יאָרן
 statistics-true-retention-all-time = אַלע צײַטן
 # If there are no reviews within a specific time period, the retention
@@ -182,7 +182,7 @@ statistics-answer-buttons-button-number = קנעפּל
 # eg Times pressed: 123
 statistics-answer-buttons-button-pressed = מאָל געקוועטשט
 statistics-answer-buttons-subtitle = וויפֿל מאָל איז איטלעכע קנעפּל געקוועטשט געוואָרן.
-statistics-reviews-title = איבער׳חזר׳ונגען
+statistics-reviews-title = אײַנ׳חזר׳ונגען
 statistics-reviews-time-checkbox = משך
 statistics-in-days-single =
     { $days ->
@@ -237,7 +237,7 @@ statistics-hours-reviews = 📊 { $reviews } איבער׳חזר׳ונגען
 # the emoji depicts the graph displaying this number
 statistics-hours-correct-reviews = 📈 { $percent }% ריכטיק ({ $reviews })
 statistics-hours-title = צע׳פּרט׳לונג לויט שעהען
-statistics-hours-subtitle = אײַנ׳חזר-הצלחה פון יעדער שעה פֿונעם טאָג.
+statistics-hours-subtitle = הצלחה לויט שעה פֿונעם טאָג.
 # shown when graph is empty
 statistics-no-data = קיין דאַטן
 statistics-calendar-title = קאַלענדאַר
@@ -278,8 +278,8 @@ statistics-amount-of-total-with-percentage = { $amount } פון { $total } ({ $p
 statistics-average-over-period = דורכשניט לויט זמן
 statistics-reviews-per-day =
     { $count ->
-        [one] { $count } איבער׳חזר׳ונג/טאָג
-       *[other] { $count } איבער׳חזר׳ונגען/טאָג
+        [one] { $count } איבער׳חזר׳ונג / טאָג
+       *[other] { $count } איבער׳חזר׳ונגען / טאָג
     }
 statistics-minutes-per-day =
     { $count ->

@@ -73,7 +73,7 @@ scheduling-learn-remaining =
        *[other] ס׳בלײַבן { $remaining } לערנענדיקע-קאַרטלעך וואָס קומען טערמיניק שפּעטער הײַנט.
     }
 scheduling-congratulations-finished = יישר-כּוח! האָסט פֿאַרענדיקט דעם טעשל לעת-עתּה.
-scheduling-today-review-limit-reached = האָסט שוין דערגרייכט דעם הײַנטיקן אײַנ׳חזר-גרענעץ, כאָטש עס בלײַבן נאָך קאַרלעך אויף אײַנצו׳חזר׳ן. כּדי צו אָפּטימיזירן דאָס אויסשטודירן, איז אפֿשר כּדאי צו פֿאַרגרעסערן דעם טעגליכן גרענעץ אין די „ברירות״.
+scheduling-today-review-limit-reached = האָסט שוין דערגרייכט דעם הײַנטיקן אײַנ׳חזר-גרענעץ, כאָטש עס בלײַבן נאָך קאַרלעך אויף וואָס זיך אײַנצו׳חזר׳ן. כּדי צו אָפּטימיזירן דאָס אויסשטודירן, איז אפֿשר כּדאי צו פֿאַרגרעסערן דעם טעגליכן גרענעץ אין די „ברירות״.
 scheduling-today-new-limit-reached = ס׳בלײַבן נאָך נײַע קאַרטלעך, כאָטש דו האָסט שוין דערגרייכט דעם טעגלעכן גרענעץ. קענסט פֿאַרגרעסערן דעם גרענעץ אין די ברירות, נאָר היט זיך אַז, וואָס מערער נײַע קאַרטלעך ווערן אײַנגעפֿירט, אַלץ גרעסער וועט ווערן די קורץ-משכדיק אָנלאָדונג.
 scheduling-buried-cards-found = עס זענען דאָ קאַרטלעך וואָס זענען אָפּגעהאַלטן געוואָרן, און וועט מאָרגן ווערן אַרויסגעוויזן. קענסט { $unburyThem } ווען דו ווילסט זיי זען תּיכף-ומיד.
 # used in scheduling-buried-cards-found
@@ -112,15 +112,15 @@ scheduling-graduating-interval = גראַדויִרן-צווישנצײַט
 scheduling-hard-interval = שווער-צווישנצײַט
 scheduling-ignore-answer-times-longer-than = פֿאַרקוקן ענטפֿער-צײַטן לענגער פון
 scheduling-interval-modifier = צווישנצײַט מאָדיפֿיצירער
-scheduling-lapses = פֿאַרטונקלונגען
-scheduling-lapses2 = פֿאַרטונקלונגען
+scheduling-lapses = לאַפּסוסן
+scheduling-lapses2 = לאַפּסוסן
 scheduling-learning = לערנענדיקע
 scheduling-leech-action = שנאָרער-טוּונג
 scheduling-leech-threshold = שנאָרער-שוועל
 scheduling-maximum-interval = מאַקסימאַל צווישנצײַט
-scheduling-maximum-reviewsday = מאַקסימאַל איבער׳חזר׳ונגען לויט טאָג
+scheduling-maximum-reviewsday = מאַקסימאַלער צאָל אײַנצו׳חזר׳ן אין איין מעת-לעת
 scheduling-minimum-interval = מינימאַל צווישנצײַט
-scheduling-mix-new-cards-and-reviews = צעמישן נײַע און חזר-קאַרטלעך
+scheduling-mix-new-cards-and-reviews = צעמישן נײַע קאַרטלעך און חזר-קאַרטלעך
 scheduling-new-cards = נײַע קאַרטלעך
 scheduling-new-cardsday = נײַע קאַרטלעך לויט טאָג
 scheduling-new-interval = נײַע צווישנצײַט
@@ -128,10 +128,10 @@ scheduling-new-options-group-name = נײַע ברירות-גרופּע נאָמ�
 scheduling-options-group = ברירות-גרופּע:
 scheduling-order = סדר
 scheduling-parent-limit = (אָפּשטאם גרענעץ: { $val })
-scheduling-reset-counts = אײַנשטעלן חשבונות פון איבער׳חזר׳ונגען און פֿאַרטונקלונג אויף ס׳נײַ
+scheduling-reset-counts = אײַנשטעלן חשבונות פֿון איבער׳חזר׳ן און פֿאַרטונקלען אויף ס׳נײַ
 scheduling-restore-position = אויפֿריכטן ערשטיקע אָרט וואו ס׳איז מעגלעך
 scheduling-review = אײַנ׳חזר׳ן
-scheduling-reviews = איבער׳חזר׳ונגען
+scheduling-reviews = אײַנ׳חזר׳ונגען
 scheduling-seconds = סעקונדעס
 scheduling-set-all-decks-below-to = באַשטימען אַלע טעשלעך קלענער ווי { $val } אין אָט דער ברירה-גרופּע?
 scheduling-set-for-all-subdecks = באַשטימען אויף אַלע סובטעשלעך
@@ -153,7 +153,7 @@ scheduling-deck-updated =
     }
 scheduling-set-due-date-prompt =
     { $cards ->
-        [one] אויסווײַזן קאַרטלעך נאָך וויפֿל טעג?
+        [one] אויסווײַזן קאַרטל נאָך וויפֿל טעג?
        *[other] אויסווײַזן קאַרטלעך נאָך וויפֿל טעג?
     }
 scheduling-set-due-date-prompt-hint =

@@ -34,7 +34,7 @@ card-templates-anki-couldnt-find-the-line-between = „אַנקי״ האָט נ�
 card-templates-at-least-one-card-type-is = ס׳מוז דאָ זײַן כאָטש איינע קאַרטלגרופּע.
 card-templates-browser-appearance = בלעטערער אָנבליק…
 card-templates-card = קאַרטל { $val }
-card-templates-card-types-for = מיני קאַרלעך פון { $val }
+card-templates-card-types-for = קאַרטל-גרופּעס פון { $val }
 card-templates-cloze = שפּאַלט { $val }
 card-templates-deck-override = טעשל בטל מאַכן…
 card-templates-copy-info = קאָפּירן ידיעות אין קליפּבאָורד
@@ -58,7 +58,7 @@ card-templates-this-will-create-card-proceed =
         [one] { $count } קאַרטל וועט ווערן באַשאַפֿן. זאָל מע ממשיך זײַן?
        *[other] { $count } קאַרטלעך וועלן באַשאַפֿן ווערן. זאָל מע ממשיך זײַן?
     }
-card-templates-type-boxes-warning = ס׳קען זײַן נאָך איין וואָרטיר-קעסטל אין יעדעס מוסטער-קאַרטל.
+card-templates-type-boxes-warning = ס׳קען זײַן נאָך איין טיפּיר-קעסטל אין יעדעס מוסטער-קאַרטל.
 card-templates-restore-to-default = אויפֿריכטן ווי לכתּחילה
 card-templates-restore-to-default-confirmation = אַלע פֿעלדער און מוסטערן פון דער נאָטיצגרופּע וועלן אויפֿגעריכט ווערן אַזוי ויי לכתּחילה, און ס׳וועלן אַוועקגעוואָרפֿן ווערן אַלע איבעריקע פֿעלדער/מוסטערן, אַזאַ אינהאַלט און צוגעפּאַסטע שטייגערס. ווילסטו ממשיך זײַן?
 card-templates-restored-to-default = די נאָטיצגרופּע איז אויפֿגעריכטן געוואָרן אינעם ערשטן מצבֿ.

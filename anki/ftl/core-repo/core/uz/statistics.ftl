@@ -1,7 +1,7 @@
 # The date a card will be ready to review
-statistics-due-date = Muddati
+statistics-due-date = Muddat
 # The count of cards waiting to be reviewed
-statistics-due-count = Muddati
+statistics-due-count = Muddat
 # Shown in the Due column of the Browse screen when the card is a new card
 statistics-due-for-new-card = Yangi #{ $number }
 
@@ -15,33 +15,33 @@ statistics-average-answer-time = { $average-seconds } s ({ statistics-cards-per-
 
 statistics-in-time-span-seconds =
     { $amount ->
-        [one] { $amount } soniyada
-       *[other] { $amount } soniyada
+        [one] { $amount } soniya ichida
+       *[other] { $amount } soniya ichida
     }
 statistics-in-time-span-minutes =
     { $amount ->
-        [one] { $amount } daqiqada
-       *[other] { $amount } daqiqada
+        [one] { $amount } daqiqa ichida
+       *[other] { $amount } daqiqa ichida
     }
 statistics-in-time-span-hours =
     { $amount ->
-        [one] { $amount } soatda
-       *[other] { $amount } soatda
+        [one] { $amount } soat ichida
+       *[other] { $amount } soat ichida
     }
 statistics-in-time-span-days =
     { $amount ->
-        [one] { $amount } kunda
-       *[other] { $amount } kunda
+        [one] { $amount } kun ichida
+       *[other] { $amount } kun ichida
     }
 statistics-in-time-span-months =
     { $amount ->
-        [one] { $amount } oyda
-       *[other] { $amount } oyda
+        [one] { $amount } oy ichida
+       *[other] { $amount } oy ichida
     }
 statistics-in-time-span-years =
     { $amount ->
-        [one] { $amount } yilda
-       *[other] { $amount } yilda
+        [one] { $amount } yil ichida
+       *[other] { $amount } yil ichida
     }
 # Shown at the bottom of the deck list, and in the statistics screen.
 # eg "Studied 3 cards in 13 seconds today (4.33s/card)."
@@ -52,27 +52,27 @@ statistics-studied-today =
         [seconds]
             Bugun { statistics-in-time-span-seconds }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
         [minutes]
             Bugun { statistics-in-time-span-minutes }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
         [hours]
             Bugun { statistics-in-time-span-hours }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
         [days]
             Bugun { statistics-in-time-span-days }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
         [months]
             Bugun { statistics-in-time-span-months }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
        *[years]
             Bugun { statistics-in-time-span-years }
             { statistics-cards } oʻrganildi
-            ({ $secs-per-card } s/karta)
+            ({ $secs-per-card } soniya/karta)
     }
 
 ##
@@ -100,7 +100,7 @@ statistics-memorized = { $memorized } tasi esda qoldi
 statistics-today-title = Bugun
 statistics-today-again-count = Qaytadan takrorlanganlar:
 statistics-today-type-counts = Oʻrganildi: { $learnCount }, takrorlandi: { $reviewCount }, qaytadan oʻrganildi: { $relearnCount }, filtrlandi: { $filteredCount }
-statistics-today-no-cards = Bugun hech qancha karta oʻrganilmadi.
+statistics-today-no-cards = Bugun hech qanday karta oʻrganilmadi.
 statistics-today-no-mature-cards = Bugun hech qanday yetuk karta oʻrganilmadi.
 statistics-today-correct-mature = Yetuk kartalardagi toʻgʻri javoblar: { $correct }/{ $total } ({ $percent }%)
 statistics-counts-total-cards = Jami
@@ -135,7 +135,7 @@ statistics-true-retention-range = Diapazon
 statistics-true-retention-pass = Oʻtdi
 statistics-true-retention-fail = Unutildi
 # This will usually be the same as statistics-counts-total-cards
-statistics-true-retention-total = JamiJami
+statistics-true-retention-total = Jami
 statistics-true-retention-count = Soni
 statistics-true-retention-retention = Eslab qolish nisbati
 # This will usually be the same as statistics-counts-young-cards
@@ -265,9 +265,9 @@ statistics-calendar-title = Taqvim
 ## Please try to keep the text short, as longer text may get cut off.
 
 statistics-elapsed-time-seconds = { $amount } s
-statistics-elapsed-time-minutes = { $amount } dq
+statistics-elapsed-time-minutes = { $amount } daq.
 statistics-elapsed-time-hours = { $amount } soat
-statistics-elapsed-time-days = { $amount } k
+statistics-elapsed-time-days = { $amount } kun
 statistics-elapsed-time-months = { $amount } oy
 statistics-elapsed-time-years = { $amount } yil
 
@@ -310,7 +310,7 @@ statistics-cards-per-day =
 statistics-median-ease = Osonlik medianasi
 statistics-median-difficulty = Qiyinlik medianasi
 statistics-average-retrievability = Oʻrtacha xotirlanarlik
-statistics-estimated-total-knowledge = Taxminiy jami bilim hajmi
+statistics-estimated-total-knowledge = Taxminiy butun bilim hajmi
 statistics-save-pdf = PDF saqlash
 statistics-saved = Saqlandi.
 statistics-stats = statistika

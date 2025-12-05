@@ -41,11 +41,29 @@ studying-study-now = Hozir oʻrganish
 studying-suspend = Toʻxtatish
 studying-suspend-note = Qaydni toʻxtatish
 studying-this-is-a-special-deck-for = Bu odatdagi kun tartibidan tashqari oʻrganish uchun maxsus dasta.
-studying-to-review = Takrorlanadi
+studying-to-review = Takrorlash uchun
 studying-type-answer-unknown-field = Javobni yozing: nomaʼlum maydon { $val }
 studying-unbury = Koʻmishdan chiqarish
 studying-what-would-you-like-to-unbury = Nimani koʻmishdan chiqarmoqchisiz?
 studying-you-havent-recorded-your-voice-yet = Hali ovozingizni yozib olmadingiz.
+studying-card-studied-in-minute =
+    { $cards ->
+        [one]
+            { $minutes ->
+                [one] { $minutes } daqiqa ichida { $cards } ta karta oʻrganildi.
+               *[other] { $minutes } daqiqa ichida { $cards } ta karta oʻrganildi.
+            }
+       *[other]
+            { $minutes ->
+                [one] { $minutes } daqiqa ichida { $cards } ta karta oʻrganildi.
+               *[other] { $minutes } daqiqa ichida { $cards } ta karta oʻrganildi.
+            }
+    }
+studying-question-time-elapsed = Savolga belgilangan vaqt oʻtdi
+studying-answer-time-elapsed = Javobga belgilangan vaqt oʻtdi
+
+## OBSOLETE; you do not need to translate this
+
 studying-card-studied-in =
     { $count ->
         [one] { $count } ta kartani oʻrganishga ketgan vaqt:
@@ -56,5 +74,3 @@ studying-minute =
         [one] { $count } daqiqa.
        *[other] { $count } daqiqa.
     }
-studying-question-time-elapsed = Savolga belgilangan vaqt oʻtdi
-studying-answer-time-elapsed = Javobga belgilangan vaqt oʻtdi

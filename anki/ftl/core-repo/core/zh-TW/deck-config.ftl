@@ -22,7 +22,7 @@ deck-config-tab-description =
     - `當前牌組`：當前牌組的上限。
     - `僅限今天`：暫時更改當前牌組的的上限。
 deck-config-new-cards-ignore-review-limit = 新卡片不受複習上限影響
-deck-config-new-cards-ignore-review-limit-tooltip = 根據預設，新卡片也會計入複習上限，因此當複習卡達到上限時，新卡片也不會再顯示。啟用此選項後，新卡片將不再計入複習上限。
+deck-config-new-cards-ignore-review-limit-tooltip = 根據預設，新卡片也會計入複習上限，因此當複習次數達到上限時，新卡片也不會再顯示。啟用此選項後，新卡片將不再計入複習上限。
 deck-config-apply-all-parent-limits = 套用頂層牌組上限
 deck-config-apply-all-parent-limits-tooltip = 根據預設，學習子牌組時不會套用上層牌組的每日上限。啟用此選項後，Anki 會套用頂層牌組的每日上限，這樣可確保你在學習各子牌組時不超過總上限。
 deck-config-affects-entire-collection = 影響整個集合。
@@ -69,10 +69,10 @@ deck-config-bury-new-tooltip = 啟用後，暫停同一則筆記中的其他 `�
 deck-config-bury-review-tooltip = 啟用後，暫停同一則筆記中的其他 `複習卡`，推遲到第二天。
 deck-config-bury-interday-learning-tooltip = 啟用後，暫停同一則筆記中其他 `學習中` 且間隔大於 1 天的卡片，推遲到第二天。
 deck-config-bury-priority-tooltip =
-    Anki 收集卡片的順序為當天學習卡片→跨天學習卡片→複習卡→新卡片。這個順序影響推遲卡片的機制：
+    Anki 收集卡片的順序為當天學習卡片→跨天學習卡片→複習卡→新卡片。這個順序影響推遲卡片的處理方式：
     
-    - 啟用所有推遲選項時，會顯示順序最前的關聯卡片。例如，複習卡會優先於新卡片顯示。
-    - 順序靠後的關聯卡片無法使類型較前的卡片被推遲。例如，停用「推遲關聯的新卡片」時，學習新卡片將不會推遲跨天學習卡片和複習卡，因此關聯的複習卡和新卡片可能會同時出現。
+    - 啟用所有推遲選項時，會顯示關聯卡片中順序最前的卡片。例如，複習卡會優先於新卡片顯示。
+    - 學習關聯卡片中順序較後的卡片後，較前的卡片不會被推遲。舉例來說，停用「推遲關聯的新卡片」時，學習新卡片後，跨天學習卡片和複習卡不會被推遲，因此關聯的複習卡和新卡片可能會在同一次學習時出現。
 
 ## Gather order and sort order of cards
 
@@ -170,7 +170,7 @@ deck-config-maximum-answer-secs = 最大回答秒數
 deck-config-maximum-answer-secs-tooltip = 記錄單次複習耗時的最大秒數。若回答超過此時間（例如可能你複習中途離開了螢幕一段時間），則耗時將被記錄為你設定的上限。
 deck-config-show-answer-timer-tooltip = 在學習畫面顯示一個計時器，計算每張卡片的學習耗時。
 deck-config-stop-timer-on-answer = 顯示答案後停止螢幕上的計時器
-deck-config-stop-timer-on-answer-tooltip = 顯示答案後是否停止螢幕上的計時器。不影響統計數據。
+deck-config-stop-timer-on-answer-tooltip = 顯示答案後是否停止螢幕上的計時器。不影響統計資料。
 
 ## Auto Advance section
 
@@ -191,7 +191,7 @@ deck-config-wait-for-audio-tooltip-2 = 等待音訊播放結束後再自動套�
 deck-config-audio-title = 音訊
 deck-config-disable-autoplay = 關閉音訊自動播放
 deck-config-disable-autoplay-tooltip = 啟用後，Anki 不會自動播放音訊。你可以按下音訊按鈕或使用「重播」動作來手動播放。
-deck-config-skip-question-when-replaying = 重播答案時跳過問題
+deck-config-skip-question-when-replaying = 重播答案時略過問題
 deck-config-always-include-question-audio-tooltip = 啟用後，在卡片答案面執行「重播音訊」動作時，將不會同時播放問題面上的音訊。
 
 ## Advanced section

@@ -72,7 +72,7 @@ browsing-override-back-template = אַנולירן מוסטער-הינטן:
 browsing-override-font = אַנולירן שריפֿט:
 browsing-override-front-template = אַנולירן מוסטער-פֿאָרנט:
 browsing-please-give-your-filter-a-name = שטעל אויף דײַן פֿילטער אַ נאָמען:
-browsing-preview-selected-card = זען אויסגעקליבענע קאַרטל אין פֿאָרויס ({ $val })
+browsing-preview-selected-card = זען דאָס אויסגעקליבענע קאַרטל אין פֿאָרויס ({ $val })
 browsing-question = פֿראַגע
 browsing-queue-bottom = ריי-אונטן: { $val }
 browsing-queue-top = ריי-אויבן: { $val }
@@ -82,14 +82,14 @@ browsing-replace-with = <b>פֿאַרבײַטן אין</b>:
 browsing-reposition = איבערשטעלן…
 browsing-reposition-new-cards = איבערשטעלן נײַע קאַרטלעך
 browsing-reschedule = אָפּלייגן טערמין
-browsing-search-bar-hint = זוכן קאַרטלעך/נאָטיצן (וואָרטיר אויס טעקסט, נערנאָך קליקט ״Enter״)
+browsing-search-bar-hint = זוכן קאַרטלעך / נאָטיצן (קלאַפּ אײַן טעקסט, נערנאָך דרוק ״Enter״)
 browsing-search-in = זוכן צווישן:
 browsing-search-within-formatting-slow = זוכן צווישן פֿאָרמאַטירונג (פּאַמעלעך)
 browsing-select-deck = אויסקלײַבן טעשל
 browsing-selected-notes-only = נאָר אויסגעקליבענע נאָטיצן
 browsing-shift-position-of-existing-cards = איבעררוקן פּאָזיציע פון יעצטיקע קאַרטלעך
-browsing-sidebar = זײַט-קעסטעלע
-browsing-sidebar-filter = זײַט-קעסטעלע פֿילטער
+browsing-sidebar = זײַט-קעסטל
+browsing-sidebar-filter = זײַט-קעסטל פֿילטער
 # The field that is used for sorting (sort is an adjective here, not a verb)
 browsing-sort-field = סאָרטיר-פֿעלד
 browsing-sorting-on-this-column-is-not = סאָרטירן אין דער קאָלאָנקע ווערט נישט מעגלעך. קלײַבט אויס אַן אַנדערע.
@@ -135,7 +135,7 @@ browsing-sidebar-expand-children = צעוויקלען סוב-שטיקלעך
 browsing-sidebar-collapse-children = צונויפֿוויקלען סוב-שטיקלעך
 browsing-sidebar-decks = טעשלעך
 browsing-sidebar-tags = צעטלען
-browsing-sidebar-notetypes = מיני נאָטיץ
+browsing-sidebar-notetypes = נאָטיצגרופּעס
 browsing-sidebar-saved-searches = אויפֿגעהיטנע זוכן
 browsing-sidebar-save-current-search = אויפֿהיטן יעצטיקן זוך
 browsing-sidebar-card-state = קאַרטל-מצבֿ
@@ -152,10 +152,10 @@ browsing-studied-today = אײַנגע׳חזר׳ט
 browsing-added-today = צוגעלייגט
 browsing-again-today = ווידער
 browsing-edited-today = געביטן
-browsing-sidebar-first-review = ערשטע אײַנ׳חזר׳ונג
+browsing-sidebar-first-review = ערשטע איבער׳חזר׳ונג
 browsing-sidebar-rescheduled = טערמין אָפּגעלייגט
 browsing-sidebar-due-today = טערמיניק
-browsing-sidebar-untagged = אָן צעטל
+browsing-sidebar-untagged = אָן קיין צעטל
 browsing-sidebar-overdue = פֿאַרשפּעטיקט
 browsing-row-deleted = (אָפּגעמעקט)
 browsing-removed-unused-tags-count =
@@ -173,7 +173,7 @@ browsing-reparented-decks =
         [one] איבערגעביטן דעם נאָמען פון { $count } טעשל.
        *[other] איבערגעביטן די נעמען פון { $count } טעשלעך.
     }
-browsing-sidebar-card-state-review = אײַנ׳חזר׳ן
+browsing-sidebar-card-state-review = איבערצו׳חזר׳ן
 
 ## NO NEED TO TRANSLATE. This text is no longer used by Anki, and will be removed in the future.
 

@@ -7,8 +7,12 @@ import subprocess
 import numpy as np
 from scipy.io.wavfile import read
 import torch
-import torchaudio
 import librosa
+
+try:
+    import torchaudio  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency in our usage
+    torchaudio = None
 from melo.text import cleaned_text_to_sequence, get_bert
 from melo.text.cleaner import clean_text
 from melo import commons
@@ -226,7 +230,15 @@ def load_wav_to_torch(full_path):
 
 
 def load_wav_to_torch_new(full_path):
-    audio_norm, sampling_rate = torchaudio.load(full_path, frame_offset=0, num_frames=-1, normalize=True, channels_first=True)
+    if torchaudio is None:
+        raise RuntimeError("torchaudio is not available in this environment")
+    audio_norm, sampling_rate = torchaudio.load(
+        full_path,
+        frame_offset=0,
+        num_frames=-1,
+        normalize=True,
+        channels_first=True,
+    )
     audio_norm = audio_norm.mean(dim=0)
     return audio_norm, sampling_rate
 
