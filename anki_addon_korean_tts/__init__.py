@@ -588,9 +588,12 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     assert mode in ("remote_only", "local_only", "auto")
 
-    # For modes that require local synthesis, verify availability up front so
-    # we can fail fast instead of erroring per-note.
-    if mode in ("local_only", "auto"):
+    # For local-only mode, verify availability up front so we can fail fast
+    # instead of erroring per-note. For "auto" mode we intentionally skip this
+    # check so that the remote server can still be used even when no local
+    # model is available; in that case, "auto" effectively behaves like
+    # "remote_only", with local synthesis used only when present.
+    if mode == "local_only":
         if synthesize_korean_tts is None and get_tts_model() is None:
             showWarning(
                 "Local Korean TTS model is not available. Please check MeloTTS installation."
@@ -799,14 +802,6 @@ def setup_hooks() -> None:
                 tooltip("No notes selected.")
                 return
 
-            # Reuse batch logic but restricted to these notes
-            model = get_tts_model()
-            if not model:
-                showWarning(
-                    "Korean TTS model is not available. Please check MeloTTS installation."
-                )
-                return
-
             total_notes = len(note_ids)
 
             reply = QMessageBox.question(
@@ -863,24 +858,19 @@ def setup_hooks() -> None:
                         ) as tmp:
                             temp_path = tmp.name
 
-                        if synthesize_korean_tts is not None:
-                            synthesize_korean_tts(
-                                korean_text,
-                                temp_path,
-                                device="auto",
-                            )
-                        else:
-                            assert model is not None
-                            speaker_ids = model.hps.data.spk2id
-                            speaker_id = getattr(
-                                speaker_ids,
-                                "KR",
-                                list(speaker_ids.values())[0],
-                            )
-
-                            model.tts_to_file(
-                                korean_text, speaker_id, temp_path, quiet=True
-                            )
+                        # Use the same auto mode as card/deck batch generation:
+                        # try the remote server first, and fall back to local
+                        # synthesis only when available. This ensures that TTS
+                        # generation still works even when no local MeloTTS
+                        # model is installed.
+                        ok = _synthesize_to_tempfile(
+                            korean_text,
+                            temp_path,
+                            mode="auto",
+                        )
+                        if not ok:
+                            errors += 1
+                            continue
 
                         final_filename = mw.col.media.add_file(temp_path)
                         os.unlink(temp_path)
