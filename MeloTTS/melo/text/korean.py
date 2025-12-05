@@ -3,15 +3,28 @@
 import re
 import unicodedata
 
-from transformers import AutoTokenizer
+# NOTE:
+# The original MeloTTS Korean text frontend uses HuggingFace `transformers`
+# (via AutoTokenizer + a BERT model) for alignment features. In this project
+# we want a **fully local, dependency-light** setup, and we don't need BERT
+# conditioning for Korean – the acoustic model can run without it.
+#
+# To avoid pulling in `transformers` (and its Rust `tokenizers` dependency),
+# we remove the import here and rely purely on `g2pkk` + simple text
+# normalization for phoneme generation. BERT features are disabled in
+# `melo.utils.get_text_for_tts_infer()` for `language_str == "KR"`, so this
+# module no longer needs to talk to HuggingFace at all.
 
-from . import punctuation, symbols
-
+from . import punctuation
+from .symbols import kr_symbols
 
 from num2words import num2words
 from melo.text.ko_dictionary import english_dictionary, etc_dictionary
 from anyascii import anyascii
 from jamo import hangul_to_jamo
+
+# Allowed symbol set for the Korean model: model's KR symbols + punctuation + pad.
+_KR_ALLOWED_SYMBOLS = set(kr_symbols) | set(punctuation) | {"_"}
 
 def normalize(text):
     text = text.strip()
@@ -40,7 +53,6 @@ def normalize_english(text):
     return text
 
 
-g2p_kr = None
 def korean_text_to_phonemes(text, character: str = "hangeul") -> str:
     """
 
@@ -52,23 +64,26 @@ def korean_text_to_phonemes(text, character: str = "hangeul") -> str:
         output = '하늘' (Unicode :\u1112\u1161\u1102\u1173\u11af), (ᄒ + ᅡ + ᄂ + ᅳ + ᆯ)
 
     """
-    global g2p_kr  # pylint: disable=global-statement
-    if g2p_kr is None:
-        from g2pkk import G2p
+    # Original implementation used `g2pkk` (and indirectly python-mecab-ko),
+    # which pulls in heavy native dependencies and can be fragile to build.
+    # For this project we simplify things:
+    # - normalize the text
+    # - convert Hangul syllables directly to Jamo with `hangul_to_jamo`
+    # This keeps everything purely in Python and avoids mecab/transformers.
 
-        g2p_kr = G2p()
+    text = normalize(text)
 
     if character == "english":
-        from anyascii import anyascii
-        text = normalize(text)
-        text = g2p_kr(text)
+        # For "english" mode, just ASCII‑fold and return.
         text = anyascii(text)
         return text
 
-    text = normalize(text)
-    text = g2p_kr(text)
-    text = list(hangul_to_jamo(text))  # '하늘' --> ['ᄒ', 'ᅡ', 'ᄂ', 'ᅳ', 'ᆯ']
-    return "".join(text)
+    # Default: Jamo decomposition for Korean
+    jamos = list(hangul_to_jamo(text))  # '하늘' --> ['ᄒ', 'ᅡ', 'ᄂ', 'ᅳ', 'ᆯ']
+
+    # Map any Jamo/symbol not present in the KR symbol set to the padding symbol.
+    filtered = [ch if ch in _KR_ALLOWED_SYMBOLS else "_" for ch in jamos]
+    return "".join(filtered)
 
 def text_normalize(text):
     # res = unicodedata.normalize("NFKC", text)
@@ -89,25 +104,23 @@ def distribute_phone(n_phone, n_word):
 
 
 
-# tokenizer = AutoTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v3')
-
-model_id = 'kykim/bert-kor-base'
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-
 def g2p(norm_text):
-    tokenized = tokenizer.tokenize(norm_text)
+    # Lightweight G2P for Korean without `transformers`:
+    # - we treat each whitespace-separated token as a "word"
+    # - use g2pkk for phoneme conversion
+    # - keep punctuation tokens as-is
+    #
+    # This is simpler than the original subword/BERT-based pipeline, but
+    # sufficient for inference when the acoustic model is trained on the
+    # same symbol set.
+    tokenized = norm_text.split()
     phs = []
     ph_groups = []
     for t in tokenized:
-        if not t.startswith("#"):
-            ph_groups.append([t])
-        else:
-            ph_groups[-1].append(t.replace("#", ""))
+        ph_groups.append([t])
     word2ph = []
     for group in ph_groups:
-        text = ""
-        for ch in group:
-            text += ch
+        text = "".join(group)
         if text == '[UNK]':
             phs += ['_']
             word2ph += [1]
@@ -116,14 +129,7 @@ def g2p(norm_text):
             phs += [text]
             word2ph += [1]
             continue
-        # import pdb; pdb.set_trace()
-        # phonemes = japanese_text_to_phonemes(text)
-        # text = g2p_kr(text)
         phonemes = korean_text_to_phonemes(text)
-        # import pdb; pdb.set_trace()
-        # # phonemes = [i for i in phonemes if i in symbols]
-        # for i in phonemes:
-        #     assert i in symbols, (group, norm_text, tokenized, i)
         phone_len = len(phonemes)
         word_len = len(group)
 

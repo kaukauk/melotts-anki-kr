@@ -454,8 +454,11 @@ def batch_generate_tts() -> None:
                 processed += 1
 
             except Exception as e:
+                # Log full traceback to the console to aid debugging.
+                import traceback
                 errors += 1
                 print(f"Error processing note {note_id}: {e}")
+                traceback.print_exc()
     finally:
         mgr.finish()
 

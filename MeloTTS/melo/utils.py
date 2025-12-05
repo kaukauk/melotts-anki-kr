@@ -35,7 +35,14 @@ def get_text_for_tts_infer(text, language_str, hps, device, symbol_to_id=None):
             word2ph[i] = word2ph[i] * 2
         word2ph[0] += 1
 
-    if getattr(hps.data, "disable_bert", False):
+    # In the original MeloTTS code, BERT features are used for most languages.
+    # That requires the HuggingFace transformers+tokenizers stack, which can be
+    # problematic to build in some environments (eg. Python 3.13).
+    #
+    # For this project we want a **fully local, dependency-light Korean setup**,
+    # so we explicitly disable BERT for Korean and fall back to zero tensors.
+    # The acoustic model will still run; it just won't have BERT conditioning.
+    if language_str == "KR" or getattr(hps.data, "disable_bert", False):
         bert = torch.zeros(1024, len(phone))
         ja_bert = torch.zeros(768, len(phone))
     else:
