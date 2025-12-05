@@ -31,6 +31,42 @@ Some other features include:
 
 The Python API and model cards can be found in [this repo](https://github.com/myshell-ai/MeloTTS/blob/main/docs/install.md#python-api) or on [HuggingFace](https://huggingface.co/myshell-ai).
 
+## Remote Korean TTS service
+
+This fork includes a small HTTP service that exposes Korean TTS over a network
+API suitable for use from the accompanying Anki add-on.
+
+- Entry point: `melo/server.py`
+- API:
+  - `GET /health` – liveness check
+  - `POST /api/v1/tts/korean` – synthesize Korean text to WAV
+    - Request JSON body:
+      - `text` (string, required)
+      - `speed` (float, default `1.0`)
+      - `device` (string, default `"auto"`)
+    - Response: `audio/wav` binary payload.
+
+After installing the `MeloTTS/requirements.txt` dependencies, you can run the
+service locally on the TTS host, for example:
+
+```bash
+cd /home/kaustubh/Documents/GitHub/melotts-anki-kr/MeloTTS
+python -m melo.server
+```
+
+By default this listens on `0.0.0.0:8000`. For secure deployment, terminate TLS
+at a reverse proxy or via Tailscale HTTPS on the hostname
+`tts-server.your-tailnet.ts.net`, and forward traffic to this local
+service.
+
+To require a shared API key from clients, set:
+
+```bash
+export MELOTTS_API_KEY="your-long-random-secret"
+```
+
+Clients then include this value in the `X-API-Key` header.
+
 **Contributing**
 
 If you find this work useful, please consider contributing to this repo.

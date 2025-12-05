@@ -15,7 +15,11 @@ import re
 import sys
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+import json
+import ssl
+import urllib.error
+import urllib.request
 
 try:
     import aqt
@@ -58,8 +62,137 @@ try:
 except ImportError:  # pragma: no cover - env-specific
     synthesize_korean_tts = None  # type: ignore[assignment]
 
-# Global TTS model instance (cached to avoid reloading)
+# -----------------------------------------------------------------------------
+# Remote TTS configuration
+# -----------------------------------------------------------------------------
+
+# Base URL for the remote Korean TTS server. By default this targets the
+# Tailscale HTTPS hostname on the machine that is running the MeloTTS server.
+_REMOTE_TTS_BASE_URL = os.environ.get(
+    "KOREAN_TTS_SERVER_URL",
+    "https://tts-server.your-tailnet.ts.net",
+)
+
+_REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
+
+# Optional shared secret for simple API-key based auth. When set on both the
+# server and the client, requests must include this value in X-API-Key.
+_REMOTE_TTS_API_KEY = os.environ.get("KOREAN_TTS_SERVER_API_KEY") or None
+
+# Network timeouts (in seconds) for calls to the TTS server.
+_REMOTE_TTS_CONNECT_TIMEOUT = 3.0
+_REMOTE_TTS_READ_TIMEOUT = 60.0
+
+# Feature flag: allow disabling remote TTS entirely via environment, e.g. for
+# fully offline usage or debugging.
+_REMOTE_TTS_ENABLED = os.environ.get("KOREAN_TTS_REMOTE_ENABLED", "1") not in (
+    "",
+    "0",
+    "false",
+    "False",
+)
+
+
+def _remote_synthesize_korean_tts(
+    text: str,
+    output_path: str,
+    *,
+    speed: float = 1.0,
+) -> bool:
+    """Attempt to synthesize Korean TTS via the remote HTTP service.
+
+    Returns:
+        True if the remote call succeeded and wrote a WAV file to output_path.
+        False if the request failed for any reason (HTTP/network/protocol),
+        in which case callers should fall back to local synthesis.
+    """
+
+    if not _REMOTE_TTS_ENABLED:
+        return False
+
+    text = text.strip()
+    if not text:
+        return False
+
+    payload = {
+        "text": text,
+        "speed": float(speed),
+        "device": "auto",
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if _REMOTE_TTS_API_KEY:
+        headers["X-API-Key"] = _REMOTE_TTS_API_KEY
+
+    req = urllib.request.Request(
+        _REMOTE_TTS_ENDPOINT,
+        data=data,
+        headers=headers,
+        method="POST",
+    )
+
+    # Use default system trust store; this will validate the HTTPS certificate
+    # presented by tts-server.your-tailnet.ts.net (e.g. via Tailscale).
+    context = ssl.create_default_context()
+
+    try:
+        with urllib.request.urlopen(
+            req,
+            timeout=_REMOTE_TTS_CONNECT_TIMEOUT + _REMOTE_TTS_READ_TIMEOUT,
+            context=context,
+        ) as resp:
+            status_code = getattr(resp, "status", 200)
+            if status_code != 200:
+                print(
+                    f"Remote Korean TTS: unexpected HTTP status {status_code}",
+                    file=sys.stderr,
+                )
+                return False
+
+            content_type = resp.headers.get("Content-Type", "")
+            if "audio" not in content_type:
+                print(
+                    "Remote Korean TTS: expected audio response, "
+                    f"got Content-Type={content_type!r}",
+                    file=sys.stderr,
+                )
+                return False
+
+            audio_bytes = resp.read()
+    except urllib.error.URLError as e:
+        # Network connectivity, DNS, TLS handshake, timeout, etc.
+        print(f"Remote Korean TTS network error: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Remote Korean TTS unexpected error: {e}", file=sys.stderr)
+        return False
+
+    if not audio_bytes:
+        print("Remote Korean TTS: empty audio response", file=sys.stderr)
+        return False
+
+    try:
+        with open(output_path, "wb") as f:
+            f.write(audio_bytes)
+    except Exception as e:
+        print(f"Remote Korean TTS: failed to write {output_path}: {e}", file=sys.stderr)
+        return False
+
+    return True
+
+
+# Global TTS model instance (cached to avoid reloading for local fallback)
 _tts_model: TTS | None = None
+
+# Probe flag and cached availability for local TTS. We always attempt to load
+# MeloTTS locally once; if that fails, the explicit "local" menu option will be
+# disabled so the user cannot select it.
+_LOCAL_TTS_PROBED: bool = False
+_LOCAL_TTS_AVAILABLE: bool = False
 
 
 def get_tts_model() -> TTS | None:
@@ -100,6 +233,24 @@ def get_tts_model() -> TTS | None:
     return _tts_model
 
 
+def is_local_tts_available() -> bool:
+    """Return True if a local MeloTTS Korean model can be used.
+
+    This will try to initialize the model once per session; if initialization
+    fails, the explicit "local" generation option is disabled.
+    """
+
+    global _LOCAL_TTS_PROBED, _LOCAL_TTS_AVAILABLE
+
+    if _LOCAL_TTS_PROBED:
+        return _LOCAL_TTS_AVAILABLE
+
+    _LOCAL_TTS_PROBED = True
+    model = get_tts_model()
+    _LOCAL_TTS_AVAILABLE = bool(model)
+    return _LOCAL_TTS_AVAILABLE
+
+
 def contains_korean(text: str) -> bool:
     """Check if text contains Korean characters (Hangul)."""
     # Korean Unicode range: AC00-D7AF (Hangul Syllables)
@@ -117,6 +268,80 @@ def extract_korean_text(html: str) -> str:
     # Extract only Korean characters and spaces
     korean_chars = re.findall(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u313F\s]+', text)
     return ''.join(korean_chars).strip()
+
+
+def _synthesize_to_tempfile(
+    korean_text: str,
+    temp_path: str,
+    *,
+    mode: str,
+) -> bool:
+    """Synthesize *korean_text* into *temp_path* according to *mode*.
+
+    Modes:
+        - "remote_only": use server only; no local fallback.
+        - "local_only": use local MeloTTS only; no remote calls.
+        - "auto": try server first, then local fallback.
+
+    Returns True on success, False on failure.
+    """
+
+    assert mode in ("remote_only", "local_only", "auto")
+
+    # Helper to perform local synthesis.
+    def _local_synth() -> bool:
+        if synthesize_korean_tts is not None:
+            try:
+                synthesize_korean_tts(
+                    korean_text,
+                    temp_path,
+                    device="auto",
+                )
+                return True
+            except Exception as e:
+                print(f"Local synth via synthesize_korean_tts failed: {e}", file=sys.stderr)
+                return False
+
+        model = get_tts_model()
+        if not model:
+            return False
+
+        try:
+            speaker_ids = model.hps.data.spk2id
+            speaker_id = getattr(
+                speaker_ids,
+                "KR",
+                list(speaker_ids.values())[0],
+            )
+            model.tts_to_file(
+                korean_text, speaker_id, temp_path, quiet=True
+            )
+            return True
+        except Exception as e:
+            print(f"Local synth via direct TTS failed: {e}", file=sys.stderr)
+            return False
+
+    # Helper to perform remote synthesis.
+    def _remote_synth() -> bool:
+        try:
+            return _REMOTE_TTS_ENABLED and _remote_synthesize_korean_tts(
+                korean_text,
+                temp_path,
+                speed=1.0,
+            )
+        except Exception as e:
+            print(f"Remote synth failed: {e}", file=sys.stderr)
+            return False
+
+    if mode == "remote_only":
+        return _remote_synth()
+    if mode == "local_only":
+        return _local_synth()
+
+    # auto mode: remote first, then local fallback.
+    if _remote_synth():
+        return True
+    return _local_synth()
 
 
 def _korean_tts_filename(note_id: int, field_name: str, korean_text: str) -> str:
@@ -276,31 +501,21 @@ def handle_generate_korean_tts(reviewer: Any, url: str) -> bool:
     try:
         # Generate audio file
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
 
-        if synthesize_korean_tts is not None:
-            synthesize_korean_tts(
-                korean_text,
-                temp_path,
-                device="auto",
+        # For per-card generation, use the "auto" mode: first try the remote
+        # server, and if that fails, fall back to local synthesis.
+        success = _synthesize_to_tempfile(
+            korean_text,
+            temp_path,
+            mode="auto",
+        )
+        if not success:
+            showWarning(
+                "Failed to generate Korean TTS using both server and local modes."
             )
-        else:
-            model = get_tts_model()
-            if not model:
-                showWarning(
-                    "Korean TTS model is not available. Please check MeloTTS installation."
-                )
-                return True
-            speaker_ids = model.hps.data.spk2id
-            speaker_id = getattr(
-                speaker_ids,
-                "KR",
-                list(speaker_ids.values())[0],
-            )
-            model.tts_to_file(
-                korean_text, speaker_id, temp_path, quiet=True
-            )
+            return True
 
         # Add to Anki media folder with deterministic, text-based name.
         media_manager = mw.col.media
@@ -325,18 +540,25 @@ def handle_generate_korean_tts(reviewer: Any, url: str) -> bool:
     return True
 
 
-def batch_generate_tts() -> None:
-    """Batch generate TTS for all notes with Korean text in the current deck."""
+def _batch_generate_tts_impl(*, mode: str) -> None:
+    """Internal helper to batch generate TTS for the current deck.
+
+    mode:
+        - "remote_only": use server only (no local fallback).
+        - "local_only": use local only (no remote).
+        - "auto": try server first, then local fallback.
+    """
     if not mw or not mw.col:
         return
-    
-    model = None
-    if synthesize_korean_tts is None:
-        # Fallback to direct TTS usage if the high-level endpoint is unavailable.
-        model = get_tts_model()
-        if not model:
+
+    assert mode in ("remote_only", "local_only", "auto")
+
+    # For modes that require local synthesis, verify availability up front so
+    # we can fail fast instead of erroring per-note.
+    if mode in ("local_only", "auto"):
+        if synthesize_korean_tts is None and get_tts_model() is None:
             showWarning(
-                "Korean TTS model is not available. Please check MeloTTS installation."
+                "Local Korean TTS model is not available. Please check MeloTTS installation."
             )
             return
     
@@ -409,8 +631,7 @@ def batch_generate_tts() -> None:
                 if not should_gen:
                     processed += 1
                     continue
-
-                # Generate TTS
+                # Generate TTS according to the requested mode.
                 import tempfile
 
                 with tempfile.NamedTemporaryFile(
@@ -418,22 +639,14 @@ def batch_generate_tts() -> None:
                 ) as tmp:
                     temp_path = tmp.name
 
-                if synthesize_korean_tts is not None:
-                    synthesize_korean_tts(
-                        korean_text,
-                        temp_path,
-                        device="auto",
-                    )
-                else:
-                    assert model is not None
-                    speaker_ids = model.hps.data.spk2id
-                    # HParams behaves like a dict but has no .get(), so use getattr().
-                    speaker_id = getattr(
-                        speaker_ids, "KR", list(speaker_ids.values())[0]
-                    )
-                    model.tts_to_file(
-                        korean_text, speaker_id, temp_path, quiet=True
-                    )
+                ok = _synthesize_to_tempfile(
+                    korean_text,
+                    temp_path,
+                    mode=mode,
+                )
+                if not ok:
+                    errors += 1
+                    continue
 
                 # Add to Anki media folder with a deterministic, text-based name.
                 with open(temp_path, "rb") as f:
@@ -478,17 +691,40 @@ def batch_generate_tts() -> None:
         )
 
 
+def batch_generate_tts_server() -> None:
+    """Public entrypoint: server-only batch generation for current deck."""
+    _batch_generate_tts_impl(mode="remote_only")
+
+
+def batch_generate_tts_local() -> None:
+    """Public entrypoint: local-only batch generation for current deck."""
+    _batch_generate_tts_impl(mode="local_only")
+
+
+def batch_generate_tts() -> None:
+    """Backwards-compatible entrypoint: auto (server, then local fallback)."""
+    _batch_generate_tts_impl(mode="auto")
+
+
 def setup_menu() -> None:
     """Add menu items to Anki."""
     if not mw:
         return
     
-    # Add a separator before our menu item to put it at the bottom
+    # Add a separator before our menu items to put them at the bottom
     mw.form.menuTools.addSeparator()
     
-    action = QAction("Generate Korean TTS for Current Deck", mw)
-    action.triggered.connect(batch_generate_tts)
-    mw.form.menuTools.addAction(action)
+    # Server-based batch generation
+    server_action = QAction("Generate Korean TTS for Current Deck (Server)", mw)
+    server_action.triggered.connect(batch_generate_tts_server)
+    server_action.setEnabled(_REMOTE_TTS_ENABLED)
+    mw.form.menuTools.addAction(server_action)
+
+    # Local batch generation; only enable if a local MeloTTS model is available.
+    local_action = QAction("Generate Korean TTS for Current Deck (Local)", mw)
+    local_action.triggered.connect(batch_generate_tts_local)
+    local_action.setEnabled(is_local_tts_available())
+    mw.form.menuTools.addAction(local_action)
 
 
 def setup_hooks() -> None:
