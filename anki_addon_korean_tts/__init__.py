@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover - when running outside Anki GUI
 
 # Add MeloTTS to path if available
 # Use the local MeloTTS directory in the project
-_melotts_path = Path("/home/kaustubh/Documents/GitHub/melotts-all/MeloTTS")
+_melotts_path = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr/MeloTTS")
 if _melotts_path.exists():
     # Add MeloTTS directory to path so we can import melo
     sys.path.insert(0, str(_melotts_path))
@@ -72,7 +72,7 @@ def get_tts_model() -> TTS | None:
     if _tts_model is None:
         try:
             # Try to use offline model first
-            korean_model_dir = Path("/home/kaustubh/Documents/GitHub/melotts-all/MeloTTS-Korean")
+            korean_model_dir = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr/MeloTTS-Korean")
             
             if korean_model_dir.exists():
                 config_path = korean_model_dir / "config.json"
@@ -480,6 +480,9 @@ def setup_menu() -> None:
     if not mw:
         return
     
+    # Add a separator before our menu item to put it at the bottom
+    mw.form.menuTools.addSeparator()
+    
     action = QAction("Generate Korean TTS for Current Deck", mw)
     action.triggered.connect(batch_generate_tts)
     mw.form.menuTools.addAction(action)
@@ -694,22 +697,17 @@ def smoketest_korean_tts(col: Any | None = None) -> bool:
 
 def init_addon() -> None:
     """Initialize the add-on."""
-    if not MELOTTS_AVAILABLE:
-        showWarning(
-            "Korean TTS add-on could not import the local MeloTTS library.\n\n"
-            "It is configured to use the MeloTTS directory in this project,\n"
-            "not a pip-installed package.\n\n"
-            "Please ensure that Anki's Python environment has all MeloTTS\n"
-            "dependencies installed (torch, numpy, librosa, soundfile,\n"
-            "torchaudio, tqdm, cached_path, etc.)."
-        )
-        return
-    
+    # Always set up the menu and hooks, even if MeloTTS isn't available yet
+    # The menu item will show an error when clicked if MeloTTS isn't available
     setup_menu()
     setup_hooks()
     
-    if mw:
-        tooltip("Korean TTS add-on loaded successfully!")
+    if not MELOTTS_AVAILABLE:
+        if mw:
+            tooltip("Korean TTS add-on loaded, but MeloTTS library not found. Please check paths.")
+    else:
+        if mw:
+            tooltip("Korean TTS add-on loaded successfully!")
 
 
 # Initialize when Anki loads (only in real Anki GUI, not in headless tests)

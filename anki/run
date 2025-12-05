@@ -2,6 +2,11 @@
 
 set -e
 
+# Source cargo environment if available
+if [ -f "$HOME/.cargo/env" ]; then
+    source "$HOME/.cargo/env"
+fi
+
 export PYTHONWARNINGS=default
 export PYTHONPYCACHEPREFIX=out/pycache
 # define these as blank before calling the script if you want to disable them
