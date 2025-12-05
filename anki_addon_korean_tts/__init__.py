@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,44 @@ def extract_korean_text(html: str) -> str:
     # Extract only Korean characters and spaces
     korean_chars = re.findall(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u313F\s]+', text)
     return ''.join(korean_chars).strip()
+
+
+def _korean_tts_filename(note_id: int, field_name: str, korean_text: str) -> str:
+    """Deterministic filename for a note+field+text combination.
+
+    Includes a short hash of the Korean text so that:
+    - If the text is unchanged and audio already exists, we can skip.
+    - If the text changes, a new filename is used and audio is regenerated.
+    """
+    h = hashlib.sha1(korean_text.encode("utf-8")).hexdigest()[:8]
+    safe_field = re.sub(r"[^A-Za-z0-9_]+", "_", field_name)
+    return f"ktts_{note_id}_{safe_field}_{h}.wav"
+
+
+def _prepare_field_for_tts(
+    note: Any, field_name: str, korean_text: str
+) -> tuple[bool, str, str]:
+    """Decide whether TTS needs to be (re)generated, and return base text + filename.
+
+    Returns:
+        (should_generate, base_field_text, target_filename)
+    """
+    current_value = note[field_name]
+    if not korean_text:
+        return False, current_value, ""
+
+    target_fname = _korean_tts_filename(int(note.id), field_name, korean_text)
+
+    # If we already have an exact match, nothing to do.
+    if f"[sound:{target_fname}]" in current_value:
+        return False, current_value, target_fname
+
+    # Otherwise, strip any older Korean TTS sound tags we previously injected,
+    # so we don't accumulate multiple outdated audio references.
+    cleaned_value = re.sub(r"\s*\[sound:ktts_[^\]]+\.wav\]", "", current_value)
+    cleaned_value = cleaned_value.rstrip()
+
+    return True, cleaned_value, target_fname
 
 
 def add_play_button_to_card(text: str, card: Any, kind: str) -> str:
@@ -225,32 +264,55 @@ def handle_generate_korean_tts(reviewer: Any, url: str) -> bool:
         tooltip("No Korean text found in this card.")
         return True
     
+    # Decide if we need to (re)generate TTS for this field.
+    should_gen, base_value, target_fname = _prepare_field_for_tts(
+        note, korean_field, korean_text
+    )
+    if not should_gen:
+        tooltip("Korean TTS already up to date for this card.")
+        return True
+
     # Generate TTS
     try:
         # Generate audio file
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             temp_path = tmp.name
-        
-        speaker_ids = model.hps.data.spk2id
-        speaker_id = speaker_ids.get('KR', list(speaker_ids.values())[0])
-        
-        model.tts_to_file(korean_text, speaker_id, temp_path, quiet=True)
-        
-        # Add to Anki media folder
+
+        if synthesize_korean_tts is not None:
+            synthesize_korean_tts(
+                korean_text,
+                temp_path,
+                device="auto",
+            )
+        else:
+            model = get_tts_model()
+            if not model:
+                showWarning(
+                    "Korean TTS model is not available. Please check MeloTTS installation."
+                )
+                return True
+            speaker_ids = model.hps.data.spk2id
+            speaker_id = getattr(
+                speaker_ids,
+                "KR",
+                list(speaker_ids.values())[0],
+            )
+            model.tts_to_file(
+                korean_text, speaker_id, temp_path, quiet=True
+            )
+
+        # Add to Anki media folder with deterministic, text-based name.
         media_manager = mw.col.media
-        filename = f"korean_tts_{note.id}_{korean_field}.wav"
-        final_filename = media_manager.add_file(temp_path)
-        
+        with open(temp_path, "rb") as f:
+            final_filename = media_manager.write_data(target_fname, f.read())
+
         # Clean up temp file
         os.unlink(temp_path)
-        
+
         # Add sound tag to the field
-        current_value = note[korean_field]
-        if '[sound:' not in current_value:
-            note[korean_field] = current_value + f' [sound:{final_filename}]'
-            note.flush()
-            mw.col.notes.update_notes([note])
+        note[korean_field] = base_value + f' [sound:{final_filename}]'
+        mw.col.update_note(note)
         
         tooltip("Korean TTS generated successfully!")
         
@@ -303,44 +365,59 @@ def batch_generate_tts() -> None:
     processed = 0
     generated = 0
     errors = 0
-    
-    from aqt.progress import ProgressManager
-    
+    cancelled = False
+
     mgr = mw.progress
-    mgr.start(max=total_notes, label="Generating Korean TTS...", immediate=True)
-    
+    mgr.start(
+        max=total_notes,
+        label="Generating Korean TTS for current deck...",
+        immediate=True,
+    )
+
     try:
         for i, note_id in enumerate(note_ids):
-            mgr.update(f"Processing note {i+1}/{total_notes}...", value=i)
-            
+            if mw.progress.want_cancel():
+                cancelled = True
+                break
+
+            mgr.update(
+                f"Processing note {i + 1}/{total_notes}...", value=i + 1
+            )
+
             try:
                 note = mw.col.get_note(note_id)
-                
+
                 # Find Korean field
                 korean_text = None
                 korean_field = None
-                
+
                 for field_name, field_value in note.items():
                     text = extract_korean_text(field_value)
                     if text and contains_korean(text):
                         korean_text = text
                         korean_field = field_name
                         break
-                
+
                 if not korean_text:
                     processed += 1
                     continue
-                
-                # Check if audio already exists
-                if '[sound:' in note[korean_field]:
+
+                # Decide if we need to (re)generate TTS for this field.
+                should_gen, base_value, target_fname = _prepare_field_for_tts(
+                    note, korean_field, korean_text
+                )
+                if not should_gen:
                     processed += 1
                     continue
-                
+
                 # Generate TTS
                 import tempfile
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False
+                ) as tmp:
                     temp_path = tmp.name
-                
+
                 if synthesize_korean_tts is not None:
                     synthesize_korean_tts(
                         korean_text,
@@ -357,34 +434,45 @@ def batch_generate_tts() -> None:
                     model.tts_to_file(
                         korean_text, speaker_id, temp_path, quiet=True
                     )
-                
-                # Add to Anki media folder
-                filename = f"korean_tts_{note.id}_{korean_field}.wav"
-                final_filename = mw.col.media.add_file(temp_path)
-                
+
+                # Add to Anki media folder with a deterministic, text-based name.
+                with open(temp_path, "rb") as f:
+                    final_filename = mw.col.media.write_data(
+                        target_fname, f.read()
+                    )
+
                 # Clean up temp file
                 os.unlink(temp_path)
-                
+
                 # Add sound tag to the field
-                current_value = note[korean_field]
-                note[korean_field] = current_value + f' [sound:{final_filename}]'
+                note[korean_field] = (
+                    base_value + f" [sound:{final_filename}]"
+                )
                 mw.col.update_note(note)
-                
+
                 generated += 1
                 processed += 1
-                
+
             except Exception as e:
                 errors += 1
                 print(f"Error processing note {note_id}: {e}")
     finally:
         mgr.finish()
-    
-    showInfo(
-        f"Batch generation complete!\n\n"
-        f"Processed: {processed} notes\n"
-        f"Generated: {generated} audio files\n"
-        f"Errors: {errors}"
-    )
+
+    if cancelled:
+        showInfo(
+            "Batch generation cancelled by user.\n\n"
+            f"Processed: {processed} notes\n"
+            f"Generated: {generated} audio files\n"
+            f"Errors: {errors}"
+        )
+    else:
+        showInfo(
+            f"Batch generation complete!\n\n"
+            f"Processed: {processed} notes\n"
+            f"Generated: {generated} audio files\n"
+            f"Errors: {errors}"
+        )
 
 
 def setup_menu() -> None:
