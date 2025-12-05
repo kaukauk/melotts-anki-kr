@@ -67,7 +67,9 @@ except ImportError:  # pragma: no cover - env-specific
 # -----------------------------------------------------------------------------
 
 # Base URL for the remote Korean TTS server. By default this targets the
-# Tailscale HTTPS hostname on the machine that is running the MeloTTS server.
+# Tailscale HTTPS hostname on the machine that is running the MeloTTS server,
+# but we will also auto-detect a local development server on
+# http://127.0.0.1:8000 if the environment variable is not set.
 _REMOTE_TTS_BASE_URL = os.environ.get(
     "KOREAN_TTS_SERVER_URL",
     "https://tts-server.your-tailnet.ts.net",
@@ -91,6 +93,44 @@ _REMOTE_TTS_ENABLED = os.environ.get("KOREAN_TTS_REMOTE_ENABLED", "1") not in (
     "false",
     "False",
 )
+
+
+def _autodetect_local_server() -> None:
+    """If no explicit server URL is set, prefer a local dev server if present.
+
+    This allows you to simply run `python -m melo.server` on the same machine
+    and have the add-on automatically send traffic to http://127.0.0.1:8000
+    without additional configuration.
+    """
+
+    global _REMOTE_TTS_BASE_URL, _REMOTE_TTS_ENDPOINT
+
+    # If the user has explicitly configured a URL, never override it.
+    if "KOREAN_TTS_SERVER_URL" in os.environ:
+        return
+
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:8000/health",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=0.5) as resp:
+            status_code = getattr(resp, "status", 200)
+            if status_code == 200:
+                _REMOTE_TTS_BASE_URL = "http://127.0.0.1:8000"
+                _REMOTE_TTS_ENDPOINT = (
+                    _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
+                )
+                print(
+                    "Remote Korean TTS: detected local server at http://127.0.0.1:8000",
+                    file=sys.stderr,
+                )
+    except Exception:
+        # Silent failure: we'll stick with the default base URL.
+        pass
+
+
+_autodetect_local_server()
 
 
 def _remote_synthesize_korean_tts(
@@ -467,11 +507,6 @@ def handle_generate_korean_tts(reviewer: Any, url: str) -> bool:
     
     note = reviewer.card.note()
     if not note:
-        return True
-    
-    model = get_tts_model()
-    if not model:
-        showWarning("Korean TTS model is not available. Please check MeloTTS installation.")
         return True
     
     # Find Korean field
