@@ -78,7 +78,20 @@ class TTS(nn.Module):
             print(" > ===========================")
         return texts
 
-    def tts_to_file(self, text, speaker_id, output_path=None, sdp_ratio=0.2, noise_scale=0.6, noise_scale_w=0.8, speed=1.0, pbar=None, format=None, position=None, quiet=False,):
+    def tts_to_file(
+        self,
+        text,
+        speaker_id,
+        output_path=None,
+        sdp_ratio=0.2,
+        noise_scale=0.6,
+        noise_scale_w=0.8,
+        speed=1.0,
+        pbar=None,
+        format=None,
+        position=None,
+        quiet=False,
+    ):
         language = self.language
         texts = self.split_sentences_into_pieces(text, language, quiet)
         audio_list = []
@@ -122,12 +135,62 @@ class TTS(nn.Module):
                 # 
             audio_list.append(audio)
         torch.cuda.empty_cache()
-        audio = self.audio_numpy_concat(audio_list, sr=self.hps.data.sampling_rate, speed=speed)
+        audio = self.audio_numpy_concat(
+            audio_list, sr=self.hps.data.sampling_rate, speed=speed
+        )
 
         if output_path is None:
+            # Caller just wants the raw numpy audio back.
             return audio
+
+        #
+        # IMPORTANT: enforce a mobile-friendly WAV encoding for Anki.
+        #
+        # By default, `soundfile.write()` will choose a subtype that matches the
+        # numpy dtype. Since our model emits float32 samples, that would produce
+        # **float32 WAV files**, which Anki desktop can play but AnkiDroid /
+        # AnkiMobile frequently can not.
+        #
+        # To maximize compatibility, we always force 16‑bit PCM when we are
+        # writing WAV files (either to a file path or to an in‑memory buffer
+        # such as `io.BytesIO`). Other formats, if ever used, keep their
+        # default behaviour.
+        #
+        # Target properties:
+        # - sample_width: 2 bytes (16‑bit)
+        # - encoding: PCM_S16LE
+        # - sample_rate: self.hps.data.sampling_rate (config‑driven)
+        #
+
+        # Best-effort detection: are we writing a WAV file?
+        is_wav = False
+        if format is not None:
+            is_wav = str(format).lower() == "wav"
         else:
-            if format:
-                soundfile.write(output_path, audio, self.hps.data.sampling_rate, format=format)
-            else:
-                soundfile.write(output_path, audio, self.hps.data.sampling_rate)
+            # Infer from the filename/Path when no explicit format is given.
+            try:
+                path_str = str(output_path)
+            except Exception:
+                path_str = ""
+            if path_str.lower().endswith((".wav", ".wave")):
+                is_wav = True
+
+        # Ensure we don't exceed the [-1.0, 1.0] range before int16 conversion.
+        if is_wav:
+            audio = np.clip(audio, -1.0, 1.0)
+
+        write_kwargs = {}
+        if format is not None:
+            write_kwargs["format"] = format
+
+        if is_wav:
+            # Explicitly request 16‑bit PCM for WAV outputs so that mobile
+            # platforms (AnkiDroid / AnkiMobile) can play them reliably.
+            write_kwargs["subtype"] = "PCM_16"
+
+        soundfile.write(
+            output_path,
+            audio,
+            self.hps.data.sampling_rate,
+            **write_kwargs,
+        )
