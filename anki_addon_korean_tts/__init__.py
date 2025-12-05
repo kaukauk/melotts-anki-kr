@@ -97,18 +97,16 @@ def extract_korean_text(html: str) -> str:
 
 
 def add_play_button_to_card(text: str, card: Any, kind: str) -> str:
-    """Add a play button to cards that contain Korean text."""
+    """Add a play button to cards that contain Korean audio.
+
+    Generation of audio is handled in batch via menu actions; this hook only
+    adds playback controls when audio is already present on the card.
+    """
     if not mw or not mw.col:
         return text
     
     # Only process review cards
     if kind not in ["reviewQuestion", "reviewAnswer"]:
-        return text
-    
-    # Extract Korean text
-    korean_text = extract_korean_text(text)
-    
-    if not korean_text or not contains_korean(korean_text):
         return text
     
     # Check if audio already exists for this card
@@ -117,31 +115,21 @@ def add_play_button_to_card(text: str, card: Any, kind: str) -> str:
         return text
     
     # Look for existing sound tags
-    has_audio = '[sound:' in text
-    
-    # Add play button
-    if has_audio:
-        # Audio already exists, add play button
-        play_button = (
-            '<div style="margin: 10px 0;">'
-            '<button onclick="pycmd(\'play_korean_tts\');" '
-            'style="padding: 8px 16px; cursor: pointer; '
-            'background: #4CAF50; color: white; border: none; border-radius: 4px; '
-            'font-size: 14px; font-weight: bold;">'
-            '🔊 Play Korean</button>'
-            '</div>'
-        )
-    else:
-        # No audio yet, add a button to generate it
-        play_button = (
-            '<div style="margin: 10px 0;">'
-            '<button onclick="pycmd(\'generate_korean_tts\');" '
-            'style="padding: 8px 16px; cursor: pointer; '
-            'background: #2196F3; color: white; border: none; border-radius: 4px; '
-            'font-size: 14px; font-weight: bold;">'
-            '🎤 Generate Korean TTS</button>'
-            '</div>'
-        )
+    has_audio = "[sound:" in text
+    if not has_audio:
+        # No pre-generated audio; batch tools will add it later.
+        return text
+
+    # Audio already exists, add play button
+    play_button = (
+        '<div style="margin: 10px 0;">'
+        '<button onclick="pycmd(\'play_korean_tts\');" '
+        'style="padding: 8px 16px; cursor: pointer; '
+        'background: #4CAF50; color: white; border: none; border-radius: 4px; '
+        'font-size: 14px; font-weight: bold;">'
+        "🔊 Play Korean</button>"
+        "</div>"
+    )
     
     # Insert button at the end of the content
     # Try to insert before closing tags, otherwise append
@@ -254,7 +242,7 @@ def handle_generate_korean_tts(reviewer: Any, url: str) -> bool:
 
 
 def batch_generate_tts() -> None:
-    """Batch generate TTS for all cards with Korean text."""
+    """Batch generate TTS for all notes with Korean text in the current deck."""
     if not mw or not mw.col:
         return
     
@@ -263,8 +251,9 @@ def batch_generate_tts() -> None:
         showWarning("Korean TTS model is not available. Please check MeloTTS installation.")
         return
     
-    # Get all notes
-    note_ids = mw.col.find_notes("")
+    # Get notes in the current deck only
+    # "deck:current" uses the currently selected deck in the deck browser.
+    note_ids = mw.col.find_notes("deck:current")
     total_notes = len(note_ids)
     
     if total_notes == 0:
@@ -326,7 +315,8 @@ def batch_generate_tts() -> None:
                     temp_path = tmp.name
                 
                 speaker_ids = model.hps.data.spk2id
-                speaker_id = speaker_ids.get('KR', list(speaker_ids.values())[0])
+                # HParams behaves like a dict but has no .get(), so use getattr().
+                speaker_id = getattr(speaker_ids, "KR", list(speaker_ids.values())[0])
                 
                 model.tts_to_file(korean_text, speaker_id, temp_path, quiet=True)
                 
@@ -365,7 +355,7 @@ def setup_menu() -> None:
     if not mw:
         return
     
-    action = QAction("Generate Korean TTS for All Cards", mw)
+    action = QAction("Generate Korean TTS for Current Deck", mw)
     action.triggered.connect(batch_generate_tts)
     mw.form.menuTools.addAction(action)
 
@@ -394,6 +384,123 @@ def setup_hooks() -> None:
         return handled
     
     gui_hooks.webview_did_receive_js_message.append(on_webview_message)
+
+    # Browser: add menu item for generating TTS for selected notes
+    def on_browser_menus_did_init(browser: Any) -> None:
+        action = QAction("Generate Korean TTS for Selected Notes", browser)
+
+        def on_triggered(checked: bool = False, b: Any = browser) -> None:  # type: ignore[unused-argument]
+            if not mw or not mw.col:
+                return
+            note_ids = list(b.selected_notes())
+            if not note_ids:
+                tooltip("No notes selected.")
+                return
+
+            # Reuse batch logic but restricted to these notes
+            model = get_tts_model()
+            if not model:
+                showWarning(
+                    "Korean TTS model is not available. Please check MeloTTS installation."
+                )
+                return
+
+            total_notes = len(note_ids)
+
+            reply = QMessageBox.question(
+                mw,
+                "Generate Korean TTS (Selection)",
+                f"This will generate TTS audio for {total_notes} selected notes "
+                "that contain Korean text.\n\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            processed = 0
+            generated = 0
+            errors = 0
+
+            mgr = mw.progress
+            mgr.start(
+                max=total_notes,
+                label="Generating Korean TTS for selection...",
+                immediate=True,
+            )
+
+            try:
+                for i, note_id in enumerate(note_ids):
+                    mgr.update(
+                        f"Processing note {i + 1}/{total_notes}...", value=i
+                    )
+                    try:
+                        note = mw.col.get_note(note_id)
+
+                        korean_text = None
+                        korean_field = None
+
+                        for field_name, field_value in note.items():
+                            text = extract_korean_text(field_value)
+                            if text and contains_korean(text):
+                                korean_text = text
+                                korean_field = field_name
+                                break
+
+                        if not korean_text:
+                            processed += 1
+                            continue
+
+                        if "[sound:" in note[korean_field]:
+                            processed += 1
+                            continue
+
+                        import tempfile
+
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".wav", delete=False
+                        ) as tmp:
+                            temp_path = tmp.name
+
+                        speaker_ids = model.hps.data.spk2id
+                        speaker_id = getattr(
+                            speaker_ids,
+                            "KR",
+                            list(speaker_ids.values())[0],
+                        )
+
+                        model.tts_to_file(
+                            korean_text, speaker_id, temp_path, quiet=True
+                        )
+
+                        final_filename = mw.col.media.add_file(temp_path)
+                        os.unlink(temp_path)
+
+                        current_value = note[korean_field]
+                        note[korean_field] = (
+                            current_value + f" [sound:{final_filename}]"
+                        )
+                        note.flush()
+                        mw.col.notes.update_notes([note])
+
+                        generated += 1
+                        processed += 1
+                    except Exception as e:
+                        errors += 1
+                        print(f"Error processing note {note_id}: {e}")
+            finally:
+                mgr.finish()
+
+            showInfo(
+                "Selection generation complete!\n\n"
+                f"Processed: {processed} notes\n"
+                f"Generated: {generated} audio files\n"
+                f"Errors: {errors}"
+            )
+
+        action.triggered.connect(on_triggered)
+        browser.form.menuEdit.addAction(action)
+
+    gui_hooks.browser_menus_did_init.append(on_browser_menus_did_init)
 
 
 def init_addon() -> None:

@@ -411,6 +411,10 @@ class HParams:
                 v = HParams(**v)
             self[k] = v
 
+    # Provide a dict-like .get() helper so external code can treat this like a mapping.
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
     def keys(self):
         return self.__dict__.keys()
 
