@@ -1,0 +1,10 @@
+adding-add-shortcut-ctrlandenter = Engadir (atallo: ctrl+intro)
+adding-added = Engadida
+adding-discard-current-input = Queres descartar a entrada actual?
+adding-keep-editing = Seguir editando
+adding-edit = Editar "{ $val }"
+adding-history = Historial
+adding-note-deleted = (Nota eliminada)
+adding-shortcut = Atallo: { $val }
+adding-the-first-field-is-empty = O primeiro campo está baleiro.
+adding-you-have-a-cloze-deletion-note = Ten un tipo de nota de ocos mais non inseriu ningún oco. Quere continuar?

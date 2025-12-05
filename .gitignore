@@ -1,0 +1,664 @@
+# ==============================================================================
+# MELOTTS-ALL Repository .gitignore
+# ==============================================================================
+# This repository contains:
+# - anki/          : Anki desktop application (Rust/Python/TypeScript)
+# - MeloTTS/       : MeloTTS text-to-speech library (Python)
+# - MeloTTS-Korean/: Korean TTS model files
+# ==============================================================================
+
+# ==============================================================================
+# Python
+# ==============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+*.dylib
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments (CRITICAL - these are large!)
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.ENV/
+virtualenv/
+.venv*/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.pytest_cache/
+.coverage.*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+*.env
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+.pytype/
+
+# Rope
+.ropeproject
+
+# ==============================================================================
+# Rust / Cargo
+# ==============================================================================
+# Cargo build artifacts
+target/
+**/target/
+Cargo.lock
+# Note: Keep Cargo.lock for applications (like anki), but ignore for libraries
+
+# Rust build artifacts
+*.pdb
+*.rlib
+*.rmeta
+*.d
+*.ll
+*.bc
+
+# Rust test artifacts
+*.test
+
+# ==============================================================================
+# Node.js / TypeScript / JavaScript / Yarn
+# ==============================================================================
+# Dependencies
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory
+coverage/
+*.lcov
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out/
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+.yarn/
+
+# Package manager locks (keep Cargo.lock, but ignore others)
+package-lock.json
+pnpm-lock.yaml
+# Note: yarn.lock is typically kept for applications
+
+# ==============================================================================
+# Anki-specific build outputs and artifacts
+# ==============================================================================
+# Anki build system outputs (Ninja build system)
+anki/out/
+anki/build/
+anki/.n2_db
+anki/.ninja_log
+anki/.ninja_deps
+anki/build.ninja
+
+# Anki Rust build artifacts
+anki/rust/target/
+anki/rust/debug/
+anki/rust/release/
+anki/target/
+
+# Anki Node.js
+anki/node_modules/
+anki/.yarn/
+anki/yarn-error.log
+
+# Anki TypeScript/SvelteKit
+anki/ts/.svelte-kit/
+anki/ts/dist/
+anki/ts/build/
+
+# Anki Python virtual environment
+anki/out/pyenv/
+anki/out/pycache/
+
+# Anki Python packages
+anki/out/pylib/
+anki/out/qt/
+
+# Anki Rust binaries
+anki/out/rust/
+anki/rust/target/
+
+# Anki build downloads and extracted files
+anki/out/download/
+anki/out/extracted/
+
+# Anki SvelteKit build
+anki/out/sveltekit/
+
+# Anki TypeScript build
+anki/out/ts/
+
+# Anki extra files
+anki/extra/
+
+# Anki profiling
+anki/*.prof
+
+# ==============================================================================
+# MeloTTS-specific files
+# ==============================================================================
+# Audio output files (generated by TTS)
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.aac
+*.m4a
+
+# Model checkpoints and weights (LARGE FILES - do not commit!)
+*.pth
+*.ckpt
+*.pt
+*.pkl
+*.h5
+*.hdf5
+*.safetensors
+*.bin
+*.onnx
+*.pb
+*.tflite
+
+# Model directories
+models/
+checkpoints/
+weights/
+pretrained/
+
+# Model cache
+.cache/
+.cache/*
+MeloTTS/.cache/
+MeloTTS/cache/
+
+# MeloTTS virtual environment
+MeloTTS/venv/
+MeloTTS/env/
+MeloTTS/.venv/
+
+# MeloTTS Python package info
+MeloTTS/*.egg-info/
+MeloTTS/melotts.egg-info/
+MeloTTS/dist/
+MeloTTS/build/
+
+# MeloTTS test outputs
+MeloTTS/korean_output*.wav
+MeloTTS/test/outputs/
+MeloTTS/basetts_outputs*/
+MeloTTS/*_output*.wav
+
+# MeloTTS downloaded models (if any)
+MeloTTS/models/
+MeloTTS/downloads/
+
+# ==============================================================================
+# MeloTTS-Korean-specific
+# ==============================================================================
+# Model checkpoint (LARGE - do not commit!)
+MeloTTS-Korean/checkpoint.pth
+MeloTTS-Korean/*.pth
+MeloTTS-Korean/*.ckpt
+MeloTTS-Korean/*.pt
+
+# Keep config.json but ignore large model files
+# MeloTTS-Korean/config.json  # Keep this file
+
+# ==============================================================================
+# Build and compilation artifacts
+# ==============================================================================
+# Compiled files
+*.o
+*.a
+*.lib
+*.dll
+*.exe
+*.dylib
+*.dSYM/
+
+# Build directories
+build/
+dist/
+out/
+bin/
+obj/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Ninja build files
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Bazel
+.bazel/
+bazel-*
+*.bazel
+!BUILD.bazel
+!WORKSPACE
+
+# ==============================================================================
+# IDE / Editor files
+# ==============================================================================
+# VSCode
+.vscode/
+*.code-workspace
+.vscode-test/
+
+# IntelliJ IDEA / PyCharm / WebStorm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+Session.vim
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# VS Code
+.vscode/
+.history/
+
+# ==============================================================================
+# OS-specific files
+# ==============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+Desktop.ini
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==============================================================================
+# Logs and temporary files
+# ==============================================================================
+# Log files
+*.log
+*.log.*
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+*.orig
+
+# Temporary directories
+/tmp/
+/temp/
+tmp/
+temp/
+
+# ==============================================================================
+# Database files
+# ==============================================================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ==============================================================================
+# Archives and compressed files
+# ==============================================================================
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.xz
+*.bz2
+*.tgz
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# ==============================================================================
+# Large data files (typically should not be in git)
+# ==============================================================================
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+
+# ==============================================================================
+# Secrets and credentials (CRITICAL - never commit!)
+# ==============================================================================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cert
+secrets/
+credentials/
+*.secret
+*.token
+config.local.*
+*.credentials
+
+# ==============================================================================
+# Documentation builds
+# ==============================================================================
+docs/_build/
+docs/.doctrees/
+docs/_static/
+docs/_templates/
+site/
+_site/
+
+# Sphinx
+docs/_build/
+docs/.doctrees/
+
+# ==============================================================================
+# Profiling and debugging
+# ==============================================================================
+*.prof
+*.pstats
+*.trace
+*.dump
+core.*
+*.core
+
+# ==============================================================================
+# Docker
+# ==============================================================================
+.dockerignore
+docker-compose.override.yml
+
+# ==============================================================================
+# Testing
+# ==============================================================================
+test_outputs/
+test_results/
+*.test.log
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ==============================================================================
+# Miscellaneous
+# ==============================================================================
+# Claude AI
+.claude/
+.claude/settings.local.json
+.claude/user.md
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Lock files (keep Cargo.lock and yarn.lock for applications)
+package-lock.json
+pnpm-lock.yaml
+# Keep: Cargo.lock, yarn.lock
+
+# Large binary files
+*.bin
+*.dat
+*.data
+
+# ==============================================================================
+# Project-specific exclusions
+# ==============================================================================
+# Anki specific (from anki/.gitignore)
+anki/user.bazelrc
+anki/windows.bazelrc
+anki/anki.prof
+
+# MeloTTS specific
+MeloTTS/*.wav
+MeloTTS/*.mp3
+
+# MeloTTS-Korean specific
+MeloTTS-Korean/*.pth
+MeloTTS-Korean/*.ckpt
