@@ -16,10 +16,26 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import aqt
-from aqt import gui_hooks, mw
-from aqt.qt import *
-from aqt.utils import showInfo, showWarning, tooltip
+try:
+    import aqt
+    from aqt import gui_hooks, mw
+    from aqt.qt import *
+    from aqt.utils import showInfo, showWarning, tooltip
+    _ANKI_GUI_AVAILABLE = True
+except Exception:  # pragma: no cover - when running outside Anki GUI
+    aqt = None  # type: ignore[assignment]
+    gui_hooks = None  # type: ignore[assignment]
+    mw = None  # type: ignore[assignment]
+    _ANKI_GUI_AVAILABLE = False
+
+    def showInfo(msg: str) -> None:  # type: ignore[override]
+        print(msg)
+
+    def showWarning(msg: str) -> None:  # type: ignore[override]
+        print(msg, file=sys.stderr)
+
+    def tooltip(msg: str) -> None:  # type: ignore[override]
+        print(msg)
 
 # Add MeloTTS to path if available
 # Use the local MeloTTS directory in the project
@@ -34,6 +50,12 @@ try:
 except ImportError:
     MELOTTS_AVAILABLE = False
     TTS = None
+
+try:
+    # High-level endpoint API around TTS; preferred entrypoint.
+    from melo.simple_korean_tts import synthesize_korean_tts  # type: ignore[import]
+except ImportError:  # pragma: no cover - env-specific
+    synthesize_korean_tts = None  # type: ignore[assignment]
 
 # Global TTS model instance (cached to avoid reloading)
 _tts_model: TTS | None = None
@@ -246,10 +268,15 @@ def batch_generate_tts() -> None:
     if not mw or not mw.col:
         return
     
-    model = get_tts_model()
-    if not model:
-        showWarning("Korean TTS model is not available. Please check MeloTTS installation.")
-        return
+    model = None
+    if synthesize_korean_tts is None:
+        # Fallback to direct TTS usage if the high-level endpoint is unavailable.
+        model = get_tts_model()
+        if not model:
+            showWarning(
+                "Korean TTS model is not available. Please check MeloTTS installation."
+            )
+            return
     
     # Get notes in the current deck only
     # "deck:current" uses the currently selected deck in the deck browser.
@@ -314,11 +341,22 @@ def batch_generate_tts() -> None:
                 with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
                     temp_path = tmp.name
                 
-                speaker_ids = model.hps.data.spk2id
-                # HParams behaves like a dict but has no .get(), so use getattr().
-                speaker_id = getattr(speaker_ids, "KR", list(speaker_ids.values())[0])
-                
-                model.tts_to_file(korean_text, speaker_id, temp_path, quiet=True)
+                if synthesize_korean_tts is not None:
+                    synthesize_korean_tts(
+                        korean_text,
+                        temp_path,
+                        device="auto",
+                    )
+                else:
+                    assert model is not None
+                    speaker_ids = model.hps.data.spk2id
+                    # HParams behaves like a dict but has no .get(), so use getattr().
+                    speaker_id = getattr(
+                        speaker_ids, "KR", list(speaker_ids.values())[0]
+                    )
+                    model.tts_to_file(
+                        korean_text, speaker_id, temp_path, quiet=True
+                    )
                 
                 # Add to Anki media folder
                 filename = f"korean_tts_{note.id}_{korean_field}.wav"
@@ -330,8 +368,7 @@ def batch_generate_tts() -> None:
                 # Add sound tag to the field
                 current_value = note[korean_field]
                 note[korean_field] = current_value + f' [sound:{final_filename}]'
-                note.flush()
-                mw.col.notes.update_notes([note])
+                mw.col.update_note(note)
                 
                 generated += 1
                 processed += 1
@@ -461,16 +498,24 @@ def setup_hooks() -> None:
                         ) as tmp:
                             temp_path = tmp.name
 
-                        speaker_ids = model.hps.data.spk2id
-                        speaker_id = getattr(
-                            speaker_ids,
-                            "KR",
-                            list(speaker_ids.values())[0],
-                        )
+                        if synthesize_korean_tts is not None:
+                            synthesize_korean_tts(
+                                korean_text,
+                                temp_path,
+                                device="auto",
+                            )
+                        else:
+                            assert model is not None
+                            speaker_ids = model.hps.data.spk2id
+                            speaker_id = getattr(
+                                speaker_ids,
+                                "KR",
+                                list(speaker_ids.values())[0],
+                            )
 
-                        model.tts_to_file(
-                            korean_text, speaker_id, temp_path, quiet=True
-                        )
+                            model.tts_to_file(
+                                korean_text, speaker_id, temp_path, quiet=True
+                            )
 
                         final_filename = mw.col.media.add_file(temp_path)
                         os.unlink(temp_path)
@@ -503,6 +548,62 @@ def setup_hooks() -> None:
     gui_hooks.browser_menus_did_init.append(on_browser_menus_did_init)
 
 
+def smoketest_korean_tts(col: Any | None = None) -> bool:
+    """Headless smoketest: verify Korean TTS can run in Anki's Python env.
+
+    This does not touch the GUI, media folder, or any collections. It only
+    checks that the add-on can import MeloTTS and synthesize a short sample
+    sentence into a temporary wav file.
+    """
+
+    from tempfile import NamedTemporaryFile
+
+    sample_text = "안녕하세요, 이것은 한국어 TTS 테스트입니다."
+
+    try:
+        with NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            temp_path = tmp.name
+
+        if synthesize_korean_tts is not None:
+            synthesize_korean_tts(
+                sample_text,
+                temp_path,
+                device="auto",
+            )
+        else:
+            model = get_tts_model()
+            if not model:
+                print("Korean TTS smoketest: model not available")
+                return False
+            speaker_ids = model.hps.data.spk2id
+            speaker_id = getattr(
+                speaker_ids,
+                "KR",
+                list(speaker_ids.values())[0],
+            )
+            model.tts_to_file(
+                sample_text,
+                speaker_id,
+                temp_path,
+                quiet=True,
+            )
+
+        if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+            print(
+                "Korean TTS smoketest: output file missing or empty:",
+                temp_path,
+            )
+            return False
+
+        os.unlink(temp_path)
+        print("Korean TTS smoketest OK")
+        return True
+
+    except Exception as e:
+        print("Korean TTS smoketest FAILED:", e)
+        return False
+
+
 def init_addon() -> None:
     """Initialize the add-on."""
     if not MELOTTS_AVAILABLE:
@@ -523,12 +624,13 @@ def init_addon() -> None:
         tooltip("Korean TTS add-on loaded successfully!")
 
 
-# Initialize when Anki loads
-if mw:
-    init_addon()
-else:
-    # If mw is not available yet, wait for it
-    def on_profile_loaded():
+# Initialize when Anki loads (only in real Anki GUI, not in headless tests)
+if _ANKI_GUI_AVAILABLE and os.environ.get("ANKI_IMPORT_ONLY") is None:
+    if mw:
         init_addon()
-    
-    gui_hooks.profile_did_open.append(on_profile_loaded)
+    elif gui_hooks is not None:
+        # If mw is not available yet, wait for it
+        def on_profile_loaded() -> None:
+            init_addon()
+
+        gui_hooks.profile_did_open.append(on_profile_loaded)
