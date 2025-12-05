@@ -45,10 +45,16 @@ import urllib.request
 from pathlib import Path
 from typing import List
 
-from MeloTTS.melo.simple_korean_tts import synthesize_korean_tts
-
 
 REPO_ROOT = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr").resolve()
+
+# Ensure the local MeloTTS source tree is importable as `melo`, mirroring the
+# logic used by the Anki korean_tts add-on.
+_melotts_path = REPO_ROOT / "MeloTTS"
+if _melotts_path.exists():
+    sys.path.insert(0, str(_melotts_path))
+
+from melo.simple_korean_tts import synthesize_korean_tts  # type: ignore[import]
 
 # Optional client machine (where Anki runs the korean_tts add-on)
 CLIENT_SSH = "user@client-host.your-tailnet.ts.net"
