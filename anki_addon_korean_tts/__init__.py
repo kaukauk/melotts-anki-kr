@@ -1220,12 +1220,22 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     start_time = time.time()
 
-    mgr = mw.progress
-    mgr.start(
-        max=total_notes,
-        label="Generating Korean TTS for current deck...",
-        immediate=True,
+    # Use a dedicated progress dialog instead of Anki's global overlay, as some
+    # window managers (e.g. on Linux/XFCE) can render the overlay as a blank,
+    # transparent window. A standard QProgressDialog provides a clearer,
+    # consistent experience and still allows cancellation.
+    progress = QProgressDialog(
+        "Preparing to generate Korean TTS…",
+        "Cancel",
+        0,
+        total_notes,
+        mw,
     )
+    progress.setWindowTitle("Korean TTS")
+    progress.setWindowModality(Qt.WindowModality.WindowModal)
+    progress.setMinimumDuration(0)
+    progress.setValue(0)
+    progress.show()
 
     # Internal helper to run a remote-only batch using the HTTP batch API.
     def _run_remote_batch(batch_items: list[dict[str, Any]]) -> None:
@@ -1276,13 +1286,15 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     try:
         for i, note_id in enumerate(note_ids):
-            if mw.progress.want_cancel():
+            if progress.wasCanceled():
                 cancelled = True
                 break
 
-            mgr.update(
-                f"Processing note {i + 1}/{total_notes}...", value=i + 1
+            progress.setLabelText(
+                f"Processing note {i + 1}/{total_notes}…"
             )
+            progress.setValue(i + 1)
+            QCoreApplication.processEvents()
 
             try:
                 note = mw.col.get_note(note_id)
@@ -1380,7 +1392,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
             _run_remote_batch(pending_remote)
             pending_remote.clear()
     finally:
-        mgr.finish()
+        progress.reset()
 
     elapsed = time.time() - start_time
 
@@ -1711,18 +1723,29 @@ def setup_hooks() -> None:
             generated = 0
             errors = 0
 
-            mgr = mw.progress
-            mgr.start(
-                max=total_notes,
-                label="Generating Korean TTS for selection...",
-                immediate=True,
+            progress = QProgressDialog(
+                "Generating Korean TTS for selection…",
+                "Cancel",
+                0,
+                total_notes,
+                mw,
             )
+            progress.setWindowTitle("Korean TTS")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.show()
 
             try:
                 for i, note_id in enumerate(note_ids):
-                    mgr.update(
-                        f"Processing note {i + 1}/{total_notes}...", value=i
+                    if progress.wasCanceled():
+                        break
+
+                    progress.setLabelText(
+                        f"Processing note {i + 1}/{total_notes}…"
                     )
+                    progress.setValue(i + 1)
+                    QCoreApplication.processEvents()
                     try:
                         note = mw.col.get_note(note_id)
 
@@ -1781,7 +1804,7 @@ def setup_hooks() -> None:
                         errors += 1
                         print(f"Error processing note {note_id}: {e}")
             finally:
-                mgr.finish()
+                progress.reset()
 
             showInfo(
                 "Selection generation complete!\n\n"
