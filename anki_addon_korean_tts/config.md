@@ -14,6 +14,7 @@
 ## Performance Settings
 
 - **remote_batch_size**: Number of items to send per batch request to the server (default: 16)
+- **tts_speed**: Numeric TTS speed multiplier for remote calls (0.1–2.0, where 1.0 is normal speed)
 
 ## Advanced Settings
 

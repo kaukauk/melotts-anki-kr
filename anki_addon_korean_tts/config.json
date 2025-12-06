@@ -5,7 +5,8 @@
   "connect_timeout_secs": 3.0,
   "read_timeout_secs": 60.0,
   "remote_batch_size": 16,
-  "melotts_extra_path": ""
+  "melotts_extra_path": "",
+  "tts_speed": 1.0
 }
 
 

@@ -100,8 +100,8 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "remote_batch_size": 16,
     # Optional extra path to a MeloTTS checkout for advanced configurations.
     "melotts_extra_path": "",
-    # Simple TTS speed profile for remote calls: "normal", "fast", "slow".
-    "tts_speed_profile": "normal",
+    # Numeric TTS speed multiplier for remote calls (0.1–2.0, where 1.0 is normal).
+    "tts_speed": 1.0,
     # Optional persisted stats from previous batch runs, used for estimates.
     "last_avg_seconds_per_note": None,
     "last_batch_total_notes": None,
@@ -200,14 +200,30 @@ _apply_config_to_globals(_CONFIG)
 
 
 def _get_effective_speed() -> float:
-    """Map the configured TTS speed profile to a numeric speed multiplier."""
+    """Return the configured TTS speed multiplier (0.1–2.0).
 
-    profile = str(_CONFIG.get("tts_speed_profile", "normal")).lower().strip()
-    if profile == "fast":
-        return 1.2
-    if profile == "slow":
-        return 0.8
-    return 1.0
+    This primarily reads the numeric ``tts_speed`` config value, but also maps
+    legacy ``tts_speed_profile`` settings (\"fast\"/\"slow\"/\"normal\") for
+    backwards compatibility.
+    """
+
+    raw = _CONFIG.get("tts_speed", 1.0)
+    speed: float
+
+    if isinstance(raw, (int, float)):
+        speed = float(raw)
+    else:
+        # Backwards compatibility for older profile-based configs.
+        profile = str(_CONFIG.get("tts_speed_profile", "normal")).lower().strip()
+        if profile == "fast":
+            speed = 1.2
+        elif profile == "slow":
+            speed = 0.8
+        else:
+            speed = 1.0
+
+    # Clamp to a sensible range.
+    return max(0.1, min(2.0, speed))
 
 
 def _try_load_melotts() -> bool:
@@ -952,16 +968,72 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     if total_notes == 0:
         showInfo("No notes found in collection.")
         return
-    
-    # Ask for confirmation
+
+    # Pre-scan deck to count how many notes actually need (re)generation. This
+    # also serves to make the confirmation message accurate and gives us a hook
+    # to surface an ETA when we have timing stats from previous runs.
+    to_generate = 0
+    for note_id in note_ids:
+        try:
+            note = mw.col.get_note(note_id)
+            korean_text = None
+            korean_field = None
+
+            for field_name, field_value in note.items():
+                text = extract_korean_text(field_value)
+                if text and contains_korean(text):
+                    korean_text = text
+                    korean_field = field_name
+                    break
+
+            if not korean_text:
+                continue
+
+            should_gen, _base_value, _target_fname = _prepare_field_for_tts(
+                note, korean_field, korean_text
+            )
+            if should_gen:
+                to_generate += 1
+        except Exception:
+            # Best-effort; skip problematic notes during estimation.
+            continue
+
+    if to_generate == 0:
+        showInfo(
+            "No notes in the current deck require Korean TTS.\n"
+            "All notes with Korean text already have up-to-date audio."
+        )
+        return
+
+    # Build confirmation message, including an ETA when we have a previous
+    # average seconds-per-note measurement.
+    lines = [
+        "This will generate or update Korean TTS audio:",
+        "",
+        f"- Deck notes: {total_notes}",
+        f"- Notes needing TTS (or regeneration): {to_generate}",
+        "",
+        "This may take a while.",
+    ]
+
+    try:
+        avg = _CONFIG.get("last_avg_seconds_per_note")
+        if isinstance(avg, (int, float)) and avg > 0:
+            eta = avg * to_generate
+            lines.append(f"Estimated runtime (based on last run): ~{eta:.1f} seconds.")
+    except Exception:
+        pass
+
+    lines.append("")
+    lines.append("Continue?")
+
     reply = QMessageBox.question(
         mw,
         "Batch Generate Korean TTS",
-        f"This will generate TTS audio for all {total_notes} notes with Korean text.\n\n"
-        "This may take a while. Continue?",
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        "\n".join(lines),
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
     )
-    
+
     if reply != QMessageBox.StandardButton.Yes:
         return
     
@@ -1279,6 +1351,36 @@ if _ANKI_GUI_AVAILABLE:
             self.melotts_path_edit.setText(str(cfg.get("melotts_extra_path") or ""))
             form.addRow("Extra MeloTTS path (optional):", self.melotts_path_edit)
 
+            # TTS speed slider (0.1–2.0x)
+            # Backwards-compatible: if legacy tts_speed_profile is present, map it.
+            raw_speed = cfg.get("tts_speed")
+            if not isinstance(raw_speed, (int, float)):
+                profile = str(cfg.get("tts_speed_profile", "normal")).lower().strip()
+                if profile == "fast":
+                    raw_speed = 1.2
+                elif profile == "slow":
+                    raw_speed = 0.8
+                else:
+                    raw_speed = 1.0
+            speed_val = float(raw_speed if raw_speed is not None else 1.0)
+
+            self.speed_slider = QSlider(Qt.Horizontal, self)
+            self.speed_slider.setMinimum(10)   # 0.10x
+            self.speed_slider.setMaximum(200)  # 2.00x
+            self.speed_slider.setSingleStep(5)
+            slider_value = max(self.speed_slider.minimum(),
+                               min(self.speed_slider.maximum(), int(speed_val * 100)))
+            self.speed_slider.setValue(slider_value)
+
+            self.speed_label = QLabel(self)
+            self._update_speed_label(slider_value)
+            self.speed_slider.valueChanged.connect(self._on_speed_slider_changed)
+
+            speed_layout = QHBoxLayout()
+            speed_layout.addWidget(self.speed_slider)
+            speed_layout.addWidget(self.speed_label)
+            form.addRow("TTS speed (0.1–2.0x):", speed_layout)
+
             layout.addLayout(form)
 
             buttons = QDialogButtonBox(
@@ -1290,6 +1392,12 @@ if _ANKI_GUI_AVAILABLE:
             buttons.rejected.connect(self.reject)
             layout.addWidget(buttons)
 
+        def _on_speed_slider_changed(self, value: int) -> None:
+            self._update_speed_label(value)
+
+        def _update_speed_label(self, value: int) -> None:
+            self.speed_label.setText(f"{value / 100.0:.2f}x")
+
         def to_config(self, base_cfg: dict[str, Any]) -> dict[str, Any]:
             cfg = dict(base_cfg)
             cfg["server_url"] = self.server_url_edit.text().strip()
@@ -1299,6 +1407,12 @@ if _ANKI_GUI_AVAILABLE:
             cfg["read_timeout_secs"] = float(self.read_timeout_spin.value())
             cfg["remote_batch_size"] = int(self.batch_size_spin.value())
             cfg["melotts_extra_path"] = self.melotts_path_edit.text().strip()
+            # Persist numeric speed and drop any legacy profile.
+            speed_val = max(
+                0.1, min(2.0, float(self.speed_slider.value()) / 100.0)
+            )
+            cfg["tts_speed"] = speed_val
+            cfg.pop("tts_speed_profile", None)
             return cfg
 
 
@@ -1361,67 +1475,6 @@ def setup_menu() -> None:
     settings_action = QAction("Korean TTS Settings…", mw)
     settings_action.triggered.connect(show_settings_dialog)
     mw.form.menuTools.addAction(settings_action)
-
-    # Dry-run / estimate mode for the current deck.
-    def estimate_current_deck() -> None:
-        if not mw or not mw.col:
-            return
-
-        note_ids = mw.col.find_notes("deck:current")
-        total_notes = len(note_ids)
-        if total_notes == 0:
-            showInfo("No notes found in collection.")
-            return
-
-        # Count how many notes would require (re)generation, without
-        # synthesizing audio.
-        to_generate = 0
-        for note_id in note_ids:
-            try:
-                note = mw.col.get_note(note_id)
-                korean_text = None
-                korean_field = None
-
-                for field_name, field_value in note.items():
-                    text = extract_korean_text(field_value)
-                    if text and contains_korean(text):
-                        korean_text = text
-                        korean_field = field_name
-                        break
-
-                if not korean_text:
-                    continue
-
-                should_gen, _base_value, _target_fname = _prepare_field_for_tts(
-                    note, korean_field, korean_text
-                )
-                if should_gen:
-                    to_generate += 1
-            except Exception:
-                # Best-effort; skip problematic notes.
-                continue
-
-        estimate_lines = [
-            "Korean TTS dry-run estimate for current deck:",
-            "",
-            f"Total notes in deck: {total_notes}",
-            f"Notes needing TTS (or regeneration): {to_generate}",
-        ]
-
-        # Use persisted timing stats, if available, for an approximate ETA.
-        try:
-            avg = _CONFIG.get("last_avg_seconds_per_note")
-            if isinstance(avg, (int, float)) and avg > 0 and to_generate > 0:
-                eta = avg * to_generate
-                estimate_lines.append(f"Estimated runtime (based on last run): ~{eta:.1f} seconds")
-        except Exception:
-            pass
-
-        showInfo("\n".join(estimate_lines))
-
-    estimate_action = QAction("Estimate Korean TTS for Current Deck", mw)
-    estimate_action.triggered.connect(estimate_current_deck)
-    mw.form.menuTools.addAction(estimate_action)
 
 
 def setup_hooks() -> None:
