@@ -77,12 +77,14 @@ except ImportError:  # pragma: no cover - env-specific
 # Remote TTS configuration (driven by add-on settings)
 # -----------------------------------------------------------------------------
 
-ADDON_CONFIG_KEY = "korean_tts"
+# Anki identifies addons by their directory/module name. We use __name__ so this
+# works whether the addon is installed as "korean_tts" or any other directory name.
+ADDON_CONFIG_KEY = __name__
 
-# Defaults used when no explicit configuration is provided. These values are
-# deliberately generic so the project is portable to other machines by changing
-# settings in Anki's add-on config UI instead of editing code.
-_DEFAULT_REMOTE_HTTP_URL = "http://127.0.0.1:8000"
+# Defaults used when no explicit configuration is provided. 
+# For this project, the default points to the known TTS server hostname.
+# Users can override this via the Anki add-on config UI or environment variables.
+_DEFAULT_REMOTE_HTTP_URL = "http://tts-server.your-tailnet.ts.net:8000"
 
 _DEFAULT_CONFIG: dict[str, Any] = {
     # Base URL of the remote Korean TTS server (scheme + host + port).
@@ -436,11 +438,35 @@ def get_tts_model() -> TTS | None:
     
     if _tts_model is None:
         try:
-            # Fall back to the generic MeloTTS API, which will either use local
-            # model files (when configured via MeloTTS itself) or download from
-            # HuggingFace as needed. We intentionally avoid hardcoding any
-            # user-specific paths here so the add-on remains portable.
-            _tts_model = TTS(language="KR", device="auto")
+            # Try to use a local offline model first. We check for a MeloTTS-Korean
+            # directory in the expected monorepo layout (sibling to MeloTTS and the
+            # add-on directory). This avoids hardcoding user-specific absolute paths
+            # while still supporting offline usage when the model files are present.
+            korean_model_dir = _repo_root / "MeloTTS-Korean"
+            
+            config_path = None
+            ckpt_path = None
+            
+            if korean_model_dir.exists():
+                config_candidate = korean_model_dir / "config.json"
+                ckpt_candidate = korean_model_dir / "checkpoint.pth"
+                if config_candidate.exists() and ckpt_candidate.exists():
+                    config_path = config_candidate
+                    ckpt_path = ckpt_candidate
+            
+            if config_path and ckpt_path:
+                # Use offline model
+                _tts_model = TTS(
+                    language='KR',
+                    device='auto',
+                    config_path=str(config_path),
+                    ckpt_path=str(ckpt_path),
+                    use_hf=False
+                )
+            else:
+                # Fall back to the generic MeloTTS API, which will download from
+                # HuggingFace as needed.
+                _tts_model = TTS(language='KR', device='auto')
         except Exception as e:
             showWarning(f"Failed to initialize Korean TTS model: {e}")
             return None

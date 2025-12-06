@@ -1,0 +1,10 @@
+{
+  "server_url": "http://tts-server.your-tailnet.ts.net:8000",
+  "remote_enabled": true,
+  "api_key": "",
+  "connect_timeout_secs": 3.0,
+  "read_timeout_secs": 60.0,
+  "remote_batch_size": 16,
+  "melotts_extra_path": ""
+}
+
