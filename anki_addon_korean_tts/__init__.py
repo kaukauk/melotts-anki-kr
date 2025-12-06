@@ -22,6 +22,7 @@ import ssl
 import urllib.error
 import urllib.request
 import warnings
+import time
 
 try:
     import aqt
@@ -99,6 +100,12 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "remote_batch_size": 16,
     # Optional extra path to a MeloTTS checkout for advanced configurations.
     "melotts_extra_path": "",
+    # Simple TTS speed profile for remote calls: "normal", "fast", "slow".
+    "tts_speed_profile": "normal",
+    # Optional persisted stats from previous batch runs, used for estimates.
+    "last_avg_seconds_per_note": None,
+    "last_batch_total_notes": None,
+    "last_batch_timestamp": None,
 }
 
 
@@ -190,6 +197,17 @@ def _apply_config_to_globals(cfg: dict[str, Any]) -> None:
 
 _CONFIG = _load_addon_config()
 _apply_config_to_globals(_CONFIG)
+
+
+def _get_effective_speed() -> float:
+    """Map the configured TTS speed profile to a numeric speed multiplier."""
+
+    profile = str(_CONFIG.get("tts_speed_profile", "normal")).lower().strip()
+    if profile == "fast":
+        return 1.2
+    if profile == "slow":
+        return 0.8
+    return 1.0
 
 
 def _try_load_melotts() -> bool:
@@ -317,9 +335,11 @@ def _remote_synthesize_korean_tts(
         file=sys.stderr,
     )
 
+    effective_speed = _get_effective_speed()
+
     payload = {
         "text": text,
-        "speed": float(speed),
+        "speed": float(effective_speed),
         "device": "auto",
     }
 
@@ -419,9 +439,11 @@ def _remote_synthesize_korean_tts_batch(
     if not payload_items:
         return {}
 
+    effective_speed = _get_effective_speed()
+
     batch_payload = {
         "items": payload_items,
-        "speed": float(speed),
+        "speed": float(effective_speed),
         "device": "auto",
     }
 
@@ -948,6 +970,9 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     generated = 0
     errors = 0
     cancelled = False
+    error_details: list[str] = []
+
+    start_time = time.time()
 
     mgr = mw.progress
     mgr.start(
@@ -958,7 +983,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     # Internal helper to run a remote-only batch using the HTTP batch API.
     def _run_remote_batch(batch_items: list[dict[str, Any]]) -> None:
-        nonlocal processed, generated, errors
+        nonlocal processed, generated, errors, error_details
 
         if not batch_items:
             return
@@ -984,6 +1009,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
             audio_bytes = remote_results.get(target_fname)
             if not audio_bytes:
                 errors += 1
+                error_details.append(f"Remote batch: no audio for {target_fname!r}")
                 continue
 
             try:
@@ -995,7 +1021,9 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                 generated += 1
             except Exception as e:  # pragma: no cover - environment-specific
                 errors += 1
-                print(f"Error writing media for {target_fname!r}: {e}", file=sys.stderr)
+                msg = f"Error writing media for {target_fname!r}: {e}"
+                error_details.append(msg)
+                print(msg, file=sys.stderr)
 
     # Number of notes to send per remote batch request when mode=="remote_only".
     pending_remote: list[dict[str, Any]] = []
@@ -1070,6 +1098,9 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                     )
                     if not ok:
                         errors += 1
+                        error_details.append(
+                            f"Synthesis failed for note {note_id} field {korean_field!r}"
+                        )
                         continue
 
                     # Add to Anki media folder with a deterministic, text-based name.
@@ -1094,7 +1125,9 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                 # Log full traceback to the console to aid debugging.
                 import traceback
                 errors += 1
-                print(f"Error processing note {note_id}: {e}")
+                msg = f"Error processing note {note_id}: {e}"
+                error_details.append(msg)
+                print(msg)
                 traceback.print_exc()
         # Flush any remaining remote items.
         if mode == "remote_only" and pending_remote:
@@ -1103,20 +1136,39 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     finally:
         mgr.finish()
 
+    elapsed = time.time() - start_time
+
+    # Persist simple timing stats for future estimates.
+    try:
+        if generated > 0 and not cancelled:
+            avg = elapsed / max(generated, 1)
+            _CONFIG["last_avg_seconds_per_note"] = avg
+            _CONFIG["last_batch_total_notes"] = total_notes
+            _CONFIG["last_batch_timestamp"] = time.time()
+            _save_addon_config(_CONFIG)
+    except Exception:
+        # Stats are best-effort; failures here should not break generation.
+        pass
+
+    summary = []
     if cancelled:
-        showInfo(
-            "Batch generation cancelled by user.\n\n"
-            f"Processed: {processed} notes\n"
-            f"Generated: {generated} audio files\n"
-            f"Errors: {errors}"
-        )
+        summary.append("Batch generation cancelled by user.")
     else:
-        showInfo(
-            f"Batch generation complete!\n\n"
-            f"Processed: {processed} notes\n"
-            f"Generated: {generated} audio files\n"
-            f"Errors: {errors}"
-        )
+        summary.append("Batch generation complete!")
+
+    summary.append("")
+    summary.append(f"Processed: {processed} notes")
+    summary.append(f"Generated: {generated} audio files")
+    summary.append(f"Errors: {errors}")
+    summary.append(f"Elapsed: {elapsed:.1f} seconds")
+
+    if errors and error_details:
+        summary.append("")
+        summary.append("Some errors occurred (showing up to 10):")
+        for msg in error_details[:10]:
+            summary.append(f"- {msg}")
+
+    showInfo("\n".join(summary))
 
 
 def batch_generate_tts_server() -> None:
@@ -1309,6 +1361,67 @@ def setup_menu() -> None:
     settings_action = QAction("Korean TTS Settings…", mw)
     settings_action.triggered.connect(show_settings_dialog)
     mw.form.menuTools.addAction(settings_action)
+
+    # Dry-run / estimate mode for the current deck.
+    def estimate_current_deck() -> None:
+        if not mw or not mw.col:
+            return
+
+        note_ids = mw.col.find_notes("deck:current")
+        total_notes = len(note_ids)
+        if total_notes == 0:
+            showInfo("No notes found in collection.")
+            return
+
+        # Count how many notes would require (re)generation, without
+        # synthesizing audio.
+        to_generate = 0
+        for note_id in note_ids:
+            try:
+                note = mw.col.get_note(note_id)
+                korean_text = None
+                korean_field = None
+
+                for field_name, field_value in note.items():
+                    text = extract_korean_text(field_value)
+                    if text and contains_korean(text):
+                        korean_text = text
+                        korean_field = field_name
+                        break
+
+                if not korean_text:
+                    continue
+
+                should_gen, _base_value, _target_fname = _prepare_field_for_tts(
+                    note, korean_field, korean_text
+                )
+                if should_gen:
+                    to_generate += 1
+            except Exception:
+                # Best-effort; skip problematic notes.
+                continue
+
+        estimate_lines = [
+            "Korean TTS dry-run estimate for current deck:",
+            "",
+            f"Total notes in deck: {total_notes}",
+            f"Notes needing TTS (or regeneration): {to_generate}",
+        ]
+
+        # Use persisted timing stats, if available, for an approximate ETA.
+        try:
+            avg = _CONFIG.get("last_avg_seconds_per_note")
+            if isinstance(avg, (int, float)) and avg > 0 and to_generate > 0:
+                eta = avg * to_generate
+                estimate_lines.append(f"Estimated runtime (based on last run): ~{eta:.1f} seconds")
+        except Exception:
+            pass
+
+        showInfo("\n".join(estimate_lines))
+
+    estimate_action = QAction("Estimate Korean TTS for Current Deck", mw)
+    estimate_action.triggered.connect(estimate_current_deck)
+    mw.form.menuTools.addAction(estimate_action)
 
 
 def setup_hooks() -> None:

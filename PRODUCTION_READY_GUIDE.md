@@ -437,10 +437,13 @@ This will:
 
 ### Health Monitoring
 
-**Server health endpoint:**
+**Server health endpoints:**
 ```bash
 curl http://your-server:8000/health
-# Response: {"status":"ok"}
+# Liveness: {"status":"ok"}
+
+curl http://your-server:8000/healthz
+# Readiness: {"status":"ok","model":"loaded"}
 ```
 
 **Add to monitoring system** (e.g., cron + alerting):

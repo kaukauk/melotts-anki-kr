@@ -1,0 +1,17 @@
+[Unit]
+Description=MeloTTS Korean TTS Server
+After=network.target
+
+[Service]
+Type=simple
+User=kaustubh
+WorkingDirectory=/home/kaustubh/Documents/GitHub/melotts-anki-kr
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/kaustubh/Documents/GitHub/melotts-anki-kr/run_melo_server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+
