@@ -1252,7 +1252,10 @@ def setup_menu() -> None:
     # Local batch generation; only enable if a local MeloTTS model is available.
     local_action = QAction("Generate Korean TTS for Current Deck (Local)", mw)
     local_action.triggered.connect(batch_generate_tts_local)
-    local_action.setEnabled(is_local_tts_available())
+    # We always enable the local action, and perform lazy detection/loading
+    # when the user actually clicks it. This avoids slowing down Anki startup
+    # by importing heavy ML libraries up front.
+    local_action.setEnabled(True)
     mw.form.menuTools.addAction(local_action)
 
     # Settings dialog
