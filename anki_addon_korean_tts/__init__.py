@@ -229,7 +229,7 @@ def _get_effective_speed() -> float:
     return max(0.1, min(2.0, speed))
 
 
-def _record_eta_sample(notes: int, chars: int, seconds: float) -> None:
+def _record_eta_sample(mode: str, notes: int, chars: int, seconds: float) -> None:
     """Record a single batch run for future ETA estimation."""
 
     if notes <= 0 or seconds <= 0:
@@ -242,6 +242,7 @@ def _record_eta_sample(notes: int, chars: int, seconds: float) -> None:
 
         hist.append(
             {
+                "mode": str(mode),
                 "notes": int(notes),
                 "chars": int(max(chars, 0)),
                 "seconds": float(seconds),
@@ -260,7 +261,7 @@ def _record_eta_sample(notes: int, chars: int, seconds: float) -> None:
         pass
 
 
-def _estimate_eta_seconds(notes: int, chars: int) -> Optional[float]:
+def _estimate_eta_seconds(mode: str, notes: int, chars: int) -> Optional[float]:
     """Estimate batch runtime in seconds using past runs.
 
     Uses simple multiple linear regression on (notes, chars) -> seconds when
@@ -285,6 +286,25 @@ def _estimate_eta_seconds(notes: int, chars: int) -> Optional[float]:
             continue
         if n > 0 and s > 0:
             samples.append((n, c, s))
+
+    # Prefer samples that match the current mode; if there are too few, fall
+    # back to using all samples.
+    filtered = [
+        (n, c, s)
+        for (n, c, s), entry in zip(
+            samples,
+            [
+                e
+                for e in hist
+                if isinstance(e, dict) and float(e.get("notes", 0) or 0) > 0
+                and float(e.get("seconds", 0.0) or 0.0) > 0
+            ],
+        )
+        if str(entry.get("mode", "") or "") == str(mode)
+    ]
+
+    if len(filtered) >= 3:
+        samples = filtered
 
     if len(samples) < 3:
         # Fallback: use last average seconds per note if available.
@@ -1169,7 +1189,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     ]
 
     try:
-        eta = _estimate_eta_seconds(to_generate, total_chars_to_generate)
+        eta = _estimate_eta_seconds(mode, to_generate, total_chars_to_generate)
         if isinstance(eta, (int, float)) and eta > 0:
             lines.append(
                 f"Estimated runtime (based on previous runs): ~{eta:.1f} seconds."
@@ -1373,6 +1393,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
             _CONFIG["last_batch_timestamp"] = time.time()
             _save_addon_config(_CONFIG)
             _record_eta_sample(
+                mode=mode,
                 notes=generated,
                 chars=total_chars_to_generate,
                 seconds=elapsed,
