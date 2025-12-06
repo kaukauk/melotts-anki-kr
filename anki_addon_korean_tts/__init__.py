@@ -81,11 +81,7 @@ except ImportError:  # pragma: no cover - env-specific
 _DEFAULT_REMOTE_HOST = "tts-server.your-tailnet.ts.net"
 _DEFAULT_REMOTE_HTTP_URL = f"http://{_DEFAULT_REMOTE_HOST}:8000"
 
-_REMOTE_TTS_BASE_URL = os.environ.get(
-    "KOREAN_TTS_SERVER_URL",
-    _DEFAULT_REMOTE_HTTP_URL,
-)
-
+_REMOTE_TTS_BASE_URL = _DEFAULT_REMOTE_HTTP_URL
 _REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
 
 # Optional shared secret for simple API-key based auth. When set on both the
@@ -143,6 +139,12 @@ def _remote_synthesize_korean_tts(
     if not text:
         return False
 
+    # Log the endpoint we are about to call for easier debugging.
+    print(
+        f"Remote Korean TTS: using endpoint {_REMOTE_TTS_ENDPOINT!r}",
+        file=sys.stderr,
+    )
+
     payload = {
         "text": text,
         "speed": float(speed),
@@ -194,7 +196,11 @@ def _remote_synthesize_korean_tts(
             audio_bytes = resp.read()
     except urllib.error.URLError as e:
         # Network connectivity, DNS, TLS handshake, timeout, etc.
-        print(f"Remote Korean TTS network error: {e}", file=sys.stderr)
+        print(
+            f"Remote Korean TTS network error talking to "
+            f"{_REMOTE_TTS_ENDPOINT!r}: {e}",
+            file=sys.stderr,
+        )
         return False
     except Exception as e:
         print(f"Remote Korean TTS unexpected error: {e}", file=sys.stderr)
