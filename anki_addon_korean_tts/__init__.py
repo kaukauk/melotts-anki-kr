@@ -66,13 +66,24 @@ except ImportError:  # pragma: no cover - env-specific
 # Remote TTS configuration
 # -----------------------------------------------------------------------------
 
-# Base URL for the remote Korean TTS server. By default this targets the
-# Tailscale HTTPS hostname on the machine that is running the MeloTTS server,
-# but we will also auto-detect a local development server on
-# http://127.0.0.1:8000 if the environment variable is not set.
+# Base URL for the remote Korean TTS server.
+#
+# Default behaviour:
+#
+# - If KOREAN_TTS_SERVER_URL is set, use it as-is.
+# - Otherwise, default to the MeloTTS HTTP server running on the *server*
+#   machine (tts-server.your-tailnet.ts.net) on port 8000:
+#       http://tts-server.your-tailnet.ts.net:8000
+#   This matches the uvicorn command we run there.
+# - On startup we will also auto-detect a local development server on
+#   http://127.0.0.1:8000 when Anki and the server are running on the same
+#   machine.
+_DEFAULT_REMOTE_HOST = "tts-server.your-tailnet.ts.net"
+_DEFAULT_REMOTE_HTTP_URL = f"http://{_DEFAULT_REMOTE_HOST}:8000"
+
 _REMOTE_TTS_BASE_URL = os.environ.get(
     "KOREAN_TTS_SERVER_URL",
-    "https://tts-server.your-tailnet.ts.net",
+    _DEFAULT_REMOTE_HTTP_URL,
 )
 
 _REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
