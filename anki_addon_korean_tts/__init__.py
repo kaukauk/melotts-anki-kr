@@ -43,12 +43,22 @@ except Exception:  # pragma: no cover - when running outside Anki GUI
     def tooltip(msg: str) -> None:  # type: ignore[override]
         print(msg)
 
-# Add MeloTTS to path if available
-# Use the local MeloTTS directory in the project
-_melotts_path = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr/MeloTTS")
-if _melotts_path.exists():
-    # Add MeloTTS directory to path so we can import melo
-    sys.path.insert(0, str(_melotts_path))
+# Add MeloTTS to path if available.
+# 
+# We support two common layouts:
+# - Development: this add-on lives inside the monorepo that also contains
+#   the MeloTTS Python package in a sibling `MeloTTS` directory.
+# - Installed: MeloTTS is installed as a normal Python package and can be
+#   imported without any sys.path tweaks.
+#
+# For development convenience we will probe for a sibling MeloTTS checkout and
+# add it to sys.path if present. This avoids hardcoding any user-specific
+# absolute paths.
+_addon_dir = Path(__file__).resolve().parent
+_repo_root = _addon_dir.parent
+_candidate_melotts = _repo_root / "MeloTTS"
+if _candidate_melotts.exists():
+    sys.path.insert(0, str(_candidate_melotts))
 
 try:
     from melo.api import TTS
@@ -64,63 +74,133 @@ except ImportError:  # pragma: no cover - env-specific
     synthesize_korean_tts = None  # type: ignore[assignment]
 
 # -----------------------------------------------------------------------------
-# Remote TTS configuration
+# Remote TTS configuration (driven by add-on settings)
 # -----------------------------------------------------------------------------
 
-# Base URL for the remote Korean TTS server.
-#
-# Default behaviour:
-#
-# - If KOREAN_TTS_SERVER_URL is set, use it as-is.
-# - Otherwise, default to the MeloTTS HTTP server running on the *server*
-#   machine (tts-server.your-tailnet.ts.net) on port 8000:
-#       http://tts-server.your-tailnet.ts.net:8000
-#   This matches the uvicorn command we run there.
-# - On startup we will also auto-detect a local development server on
-#   http://127.0.0.1:8000 when Anki and the server are running on the same
-#   machine.
-_DEFAULT_REMOTE_HOST = "tts-server.your-tailnet.ts.net"
-_DEFAULT_REMOTE_HTTP_URL = f"http://{_DEFAULT_REMOTE_HOST}:8000"
+ADDON_CONFIG_KEY = "korean_tts"
 
-_REMOTE_TTS_BASE_URL = os.environ.get(
-    "KOREAN_TTS_SERVER_URL",
-    _DEFAULT_REMOTE_HTTP_URL,
-).rstrip("/")
-_REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean"
-_REMOTE_TTS_BATCH_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean_batch"
+# Defaults used when no explicit configuration is provided. These values are
+# deliberately generic so the project is portable to other machines by changing
+# settings in Anki's add-on config UI instead of editing code.
+_DEFAULT_REMOTE_HTTP_URL = "http://127.0.0.1:8000"
 
-# Optional shared secret for simple API-key based auth. When set on both the
-# server and the client, requests must include this value in X-API-Key.
-_REMOTE_TTS_API_KEY = os.environ.get("KOREAN_TTS_SERVER_API_KEY") or None
+_DEFAULT_CONFIG: dict[str, Any] = {
+    # Base URL of the remote Korean TTS server (scheme + host + port).
+    "server_url": _DEFAULT_REMOTE_HTTP_URL,
+    # Whether remote TTS calls are enabled at all.
+    "remote_enabled": True,
+    # Optional per-client API key for simple shared-secret auth.
+    "api_key": "",
+    # Network timeouts in seconds.
+    "connect_timeout_secs": 3.0,
+    "read_timeout_secs": 60.0,
+    # Number of notes to send per HTTP batch request in server-only mode.
+    "remote_batch_size": 16,
+    # Optional extra path to a MeloTTS checkout for advanced configurations.
+    "melotts_extra_path": "",
+}
 
-# Network timeouts (in seconds) for calls to the TTS server.
-_REMOTE_TTS_CONNECT_TIMEOUT = 3.0
-_REMOTE_TTS_READ_TIMEOUT = 60.0
 
-# Feature flag: allow disabling remote TTS entirely via environment, e.g. for
-# fully offline usage or debugging.
-_REMOTE_TTS_ENABLED = os.environ.get("KOREAN_TTS_REMOTE_ENABLED", "1") not in (
-    "",
-    "0",
-    "false",
-    "False",
-)
+def _load_addon_config() -> dict[str, Any]:
+    """Load the add-on's configuration from Anki, merged with defaults."""
+
+    if not mw:
+        return dict(_DEFAULT_CONFIG)
+
+    try:
+        raw_cfg = mw.addonManager.getConfig(ADDON_CONFIG_KEY)  # type: ignore[union-attr]
+    except Exception:
+        raw_cfg = {}
+
+    cfg: dict[str, Any] = dict(_DEFAULT_CONFIG)
+    if isinstance(raw_cfg, dict):
+        for key, value in raw_cfg.items():
+            if key in cfg:
+                cfg[key] = value
+    return cfg
+
+
+def _save_addon_config(cfg: dict[str, Any]) -> None:
+    """Persist configuration back to Anki."""
+
+    if not mw:
+        return
+    try:
+        mw.addonManager.writeConfig(ADDON_CONFIG_KEY, cfg)  # type: ignore[union-attr]
+    except Exception:
+        # Config persistence failures should not break normal add-on usage.
+        print("Korean TTS: failed to save config", file=sys.stderr)
+
+
+# The following globals are derived from configuration and environment
+# variables. They are initialised once at import time and can be updated when
+# the user changes settings via the config UI.
+_REMOTE_TTS_BASE_URL: str = _DEFAULT_REMOTE_HTTP_URL
+_REMOTE_TTS_ENDPOINT: str = _DEFAULT_REMOTE_HTTP_URL + "/api/v1/tts/korean"
+_REMOTE_TTS_BATCH_ENDPOINT: str = _DEFAULT_REMOTE_HTTP_URL + "/api/v1/tts/korean_batch"
+_REMOTE_TTS_API_KEY: str | None = None
+_REMOTE_TTS_CONNECT_TIMEOUT: float = 3.0
+_REMOTE_TTS_READ_TIMEOUT: float = 60.0
+_REMOTE_TTS_ENABLED: bool = True
+_REMOTE_BATCH_SIZE: int = 16
+
+
+def _apply_config_to_globals(cfg: dict[str, Any]) -> None:
+    """Apply a loaded config dict to module-level globals."""
+
+    global _REMOTE_TTS_BASE_URL, _REMOTE_TTS_ENDPOINT, _REMOTE_TTS_BATCH_ENDPOINT
+    global _REMOTE_TTS_API_KEY, _REMOTE_TTS_CONNECT_TIMEOUT, _REMOTE_TTS_READ_TIMEOUT
+    global _REMOTE_TTS_ENABLED, _REMOTE_BATCH_SIZE
+
+    # Base URL: env var overrides config, which falls back to default.
+    cfg_server_url = str(cfg.get("server_url") or "").strip() or _DEFAULT_REMOTE_HTTP_URL
+    base_url = os.environ.get("KOREAN_TTS_SERVER_URL", cfg_server_url).strip()
+    if not base_url:
+        base_url = _DEFAULT_REMOTE_HTTP_URL
+    _REMOTE_TTS_BASE_URL = base_url.rstrip("/")
+    _REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean"
+    _REMOTE_TTS_BATCH_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean_batch"
+
+    # API key: environment takes precedence over config.
+    api_key_env = os.environ.get("KOREAN_TTS_SERVER_API_KEY")
+    if api_key_env:
+        _REMOTE_TTS_API_KEY = api_key_env
+    else:
+        api_key_cfg = str(cfg.get("api_key") or "").strip()
+        _REMOTE_TTS_API_KEY = api_key_cfg or None
+
+    # Timeouts.
+    _REMOTE_TTS_CONNECT_TIMEOUT = float(cfg.get("connect_timeout_secs", 3.0))
+    _REMOTE_TTS_READ_TIMEOUT = float(cfg.get("read_timeout_secs", 60.0))
+
+    # Remote enabled flag: env var can force on/off; otherwise config controls it.
+    env_flag = os.environ.get("KOREAN_TTS_REMOTE_ENABLED")
+    if env_flag is not None:
+        _REMOTE_TTS_ENABLED = env_flag not in ("", "0", "false", "False")
+    else:
+        _REMOTE_TTS_ENABLED = bool(cfg.get("remote_enabled", True))
+
+    # Batch size.
+    try:
+        _REMOTE_BATCH_SIZE = int(cfg.get("remote_batch_size", 16)) or 16
+    except Exception:
+        _REMOTE_BATCH_SIZE = 16
+
+
+_CONFIG = _load_addon_config()
+_apply_config_to_globals(_CONFIG)
 
 
 def _autodetect_local_server() -> None:
-    """Disabled local-autodetect in this configuration.
+    """No-op placeholder kept for backwards compatibility.
 
-    We always target the explicit KOREAN_TTS_SERVER_URL or the default remote
-    host (tts-server.your-tailnet.ts.net:8000), and avoid probing
-    127.0.0.1:8000 from inside Anki, as that can be misleading when Anki runs
-    on a different machine than the TTS server.
+    In earlier versions this attempted to probe a local development server on
+    127.0.0.1:8000. The configuration is now entirely driven by the add-on
+    settings and optional environment variables, so we intentionally do
+    nothing here.
     """
 
-    # Intentionally a no-op: leave _REMOTE_TTS_BASE_URL as configured above.
     return
-
-
-_autodetect_local_server()
 
 
 def _remote_synthesize_korean_tts(
@@ -172,7 +252,7 @@ def _remote_synthesize_korean_tts(
     )
 
     # Use default system trust store; this will validate the HTTPS certificate
-    # presented by tts-server.your-tailnet.ts.net (e.g. via Tailscale).
+    # presented by the remote TTS server when using HTTPS (e.g. via Tailscale).
     context = ssl.create_default_context()
 
     try:
@@ -356,28 +436,11 @@ def get_tts_model() -> TTS | None:
     
     if _tts_model is None:
         try:
-            # Try to use offline model first
-            korean_model_dir = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr/MeloTTS-Korean")
-            
-            if korean_model_dir.exists():
-                config_path = korean_model_dir / "config.json"
-                ckpt_path = korean_model_dir / "checkpoint.pth"
-            else:
-                config_path = None
-                ckpt_path = None
-            
-            if config_path and ckpt_path and config_path.exists() and ckpt_path.exists():
-                # Use offline model
-                _tts_model = TTS(
-                    language='KR',
-                    device='auto',
-                    config_path=str(config_path),
-                    ckpt_path=str(ckpt_path),
-                    use_hf=False
-                )
-            else:
-                # Use online model (downloads from HuggingFace)
-                _tts_model = TTS(language='KR', device='auto')
+            # Fall back to the generic MeloTTS API, which will either use local
+            # model files (when configured via MeloTTS itself) or download from
+            # HuggingFace as needed. We intentionally avoid hardcoding any
+            # user-specific paths here so the add-on remains portable.
+            _tts_model = TTS(language="KR", device="auto")
         except Exception as e:
             showWarning(f"Failed to initialize Korean TTS model: {e}")
             return None
@@ -788,7 +851,6 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                 print(f"Error writing media for {target_fname!r}: {e}", file=sys.stderr)
 
     # Number of notes to send per remote batch request when mode=="remote_only".
-    REMOTE_BATCH_SIZE = 16
     pending_remote: list[dict[str, Any]] = []
 
     try:
@@ -840,7 +902,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                             "target_fname": target_fname,
                         }
                     )
-                    if len(pending_remote) >= REMOTE_BATCH_SIZE:
+                    if len(pending_remote) >= _REMOTE_BATCH_SIZE:
                         _run_remote_batch(pending_remote)
                         pending_remote.clear()
                 else:
@@ -925,6 +987,117 @@ def batch_generate_tts() -> None:
     _batch_generate_tts_impl(mode="auto")
 
 
+if _ANKI_GUI_AVAILABLE:
+
+    class KoreanTtsSettingsDialog(QDialog):
+        """Simple settings dialog for configuring the Korean TTS add-on."""
+
+        def __init__(self, parent: Any, cfg: dict[str, Any]) -> None:
+            super().__init__(parent)
+            self.setWindowTitle("Korean TTS Settings")
+
+            layout = QVBoxLayout(self)
+            form = QFormLayout()
+
+            # Server URL
+            self.server_url_edit = QLineEdit(self)
+            self.server_url_edit.setText(str(cfg.get("server_url", "")))
+            form.addRow("Server URL:", self.server_url_edit)
+
+            # Remote enabled
+            self.remote_enabled_check = QCheckBox("Enable remote TTS", self)
+            self.remote_enabled_check.setChecked(bool(cfg.get("remote_enabled", True)))
+            form.addRow(self.remote_enabled_check)
+
+            # API key
+            self.api_key_edit = QLineEdit(self)
+            self.api_key_edit.setText(str(cfg.get("api_key", "")))
+            self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            form.addRow("API key (optional):", self.api_key_edit)
+
+            # Timeouts
+            self.connect_timeout_spin = QDoubleSpinBox(self)
+            self.connect_timeout_spin.setRange(0.1, 120.0)
+            self.connect_timeout_spin.setSingleStep(0.5)
+            self.connect_timeout_spin.setValue(
+                float(cfg.get("connect_timeout_secs", 3.0))
+            )
+            form.addRow("Connect timeout (s):", self.connect_timeout_spin)
+
+            self.read_timeout_spin = QDoubleSpinBox(self)
+            self.read_timeout_spin.setRange(1.0, 600.0)
+            self.read_timeout_spin.setSingleStep(1.0)
+            self.read_timeout_spin.setValue(
+                float(cfg.get("read_timeout_secs", 60.0))
+            )
+            form.addRow("Read timeout (s):", self.read_timeout_spin)
+
+            # Batch size
+            self.batch_size_spin = QSpinBox(self)
+            self.batch_size_spin.setRange(1, 256)
+            self.batch_size_spin.setValue(int(cfg.get("remote_batch_size", 16)))
+            form.addRow("Remote batch size:", self.batch_size_spin)
+
+            # Optional extra MeloTTS path
+            self.melotts_path_edit = QLineEdit(self)
+            self.melotts_path_edit.setText(str(cfg.get("melotts_extra_path") or ""))
+            form.addRow("Extra MeloTTS path (optional):", self.melotts_path_edit)
+
+            layout.addLayout(form)
+
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel,
+                parent=self,
+            )
+            buttons.accepted.connect(self.accept)
+            buttons.rejected.connect(self.reject)
+            layout.addWidget(buttons)
+
+        def to_config(self, base_cfg: dict[str, Any]) -> dict[str, Any]:
+            cfg = dict(base_cfg)
+            cfg["server_url"] = self.server_url_edit.text().strip()
+            cfg["remote_enabled"] = bool(self.remote_enabled_check.isChecked())
+            cfg["api_key"] = self.api_key_edit.text()
+            cfg["connect_timeout_secs"] = float(self.connect_timeout_spin.value())
+            cfg["read_timeout_secs"] = float(self.read_timeout_spin.value())
+            cfg["remote_batch_size"] = int(self.batch_size_spin.value())
+            cfg["melotts_extra_path"] = self.melotts_path_edit.text().strip()
+            return cfg
+
+
+    def show_settings_dialog() -> None:
+        """Open the Korean TTS settings dialog."""
+
+        if not mw:
+            return
+
+        global _CONFIG
+        cfg = _load_addon_config()
+        dlg = KoreanTtsSettingsDialog(mw, cfg)
+        if dlg.exec():
+            new_cfg = dlg.to_config(cfg)
+            _save_addon_config(new_cfg)
+            _CONFIG = new_cfg
+            _apply_config_to_globals(_CONFIG)
+
+            # Optionally update sys.path with a new MeloTTS path for advanced users.
+            extra_path = str(new_cfg.get("melotts_extra_path") or "").strip()
+            if extra_path:
+                p = Path(extra_path)
+                if p.exists():
+                    sys.path.insert(0, str(p))
+
+            tooltip("Korean TTS settings updated.")
+
+else:
+
+    def show_settings_dialog() -> None:  # type: ignore[dead-code]
+        """Stub in headless environments."""
+
+        return
+
+
 def setup_menu() -> None:
     """Add menu items to Anki."""
     if not mw:
@@ -944,6 +1117,11 @@ def setup_menu() -> None:
     local_action.triggered.connect(batch_generate_tts_local)
     local_action.setEnabled(is_local_tts_available())
     mw.form.menuTools.addAction(local_action)
+
+    # Settings dialog
+    settings_action = QAction("Korean TTS Settings…", mw)
+    settings_action.triggered.connect(show_settings_dialog)
+    mw.form.menuTools.addAction(settings_action)
 
 
 def setup_hooks() -> None:

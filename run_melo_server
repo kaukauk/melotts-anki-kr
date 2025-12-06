@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve repository root relative to this script location.
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Ensure MeloTTS is on PYTHONPATH so `melo.server` can be imported.
+export PYTHONPATH="${ROOT_DIR}/MeloTTS${PYTHONPATH:+:${PYTHONPATH}}"
+
+# Default host/port can still be overridden via MELOTTS_SERVER_PORT, etc.
+UVICORN_BIN="${ROOT_DIR}/anki/out/pyenv/bin/uvicorn"
+
+exec "${UVICORN_BIN}" melo.server:app --host 0.0.0.0 --port 8000 "$@"
+
+

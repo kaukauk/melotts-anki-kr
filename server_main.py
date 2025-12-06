@@ -35,6 +35,7 @@ back into Anki's media folder. This CLI stays on the server side and offers:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -46,19 +47,53 @@ from pathlib import Path
 from typing import List
 
 
-REPO_ROOT = Path("/home/kaustubh/Documents/GitHub/melotts-anki-kr").resolve()
+REPO_ROOT = Path(__file__).resolve().parent
 
 # Ensure the local MeloTTS source tree is importable as `melo`, mirroring the
-# logic used by the Anki korean_tts add-on.
+# logic used by the Anki korean_tts add-on, without hardcoding any user-specific
+# absolute paths.
 _melotts_path = REPO_ROOT / "MeloTTS"
 if _melotts_path.exists():
     sys.path.insert(0, str(_melotts_path))
 
 from melo.simple_korean_tts import synthesize_korean_tts  # type: ignore[import]
 
+
+def _load_server_config() -> dict:
+    """Load server-side configuration from server_config.json if present.
+
+    This centralises any machine-specific values such as the client SSH target
+    and repository root, so the script itself can remain portable.
+    """
+
+    cfg_path = REPO_ROOT / "server_config.json"
+    defaults = {
+        "client_ssh": "user@client-host.your-tailnet.ts.net",
+        # Default to this repository root; can be overridden in server_config.json.
+        "client_repo_root": str(REPO_ROOT),
+        "health_url": "http://127.0.0.1:8000/health",
+    }
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return defaults
+    except Exception as exc:  # pragma: no cover - environment-specific
+        print(f"Warning: failed to read {cfg_path}: {exc}", file=sys.stderr)
+        return defaults
+
+    cfg = dict(defaults)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in cfg and value is not None:
+                cfg[key] = value
+    return cfg
+
+
+_SERVER_CONFIG = _load_server_config()
+
 # Optional client machine (where Anki runs the korean_tts add-on)
-CLIENT_SSH = "user@client-host.your-tailnet.ts.net"
-CLIENT_REPO_ROOT = "/home/kaustubh/Documents/GitHub/melotts-anki-kr"
+CLIENT_SSH = str(_SERVER_CONFIG["client_ssh"])
+CLIENT_REPO_ROOT = str(_SERVER_CONFIG["client_repo_root"])
 
 # Per-sentence synthesis timeout in seconds (local, on server)
 TTS_TIMEOUT = 10.0
@@ -66,7 +101,7 @@ TTS_TIMEOUT = 10.0
 # HTTP health endpoint for the FastAPI server (melo.server).
 HEALTH_URL = os.environ.get(
     "MELOTTS_HEALTH_URL",
-    "http://127.0.0.1:8000/health",
+    str(_SERVER_CONFIG["health_url"]),
 )
 
 

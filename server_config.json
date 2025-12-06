@@ -1,0 +1,7 @@
+{
+  "client_ssh": "user@client-host.your-tailnet.ts.net",
+  "client_repo_root": "/home/kaustubh/Documents/GitHub/melotts-anki-kr",
+  "health_url": "http://127.0.0.1:8000/health"
+}
+
+
