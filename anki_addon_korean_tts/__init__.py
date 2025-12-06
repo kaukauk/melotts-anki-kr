@@ -1232,7 +1232,35 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     if reply != QMessageBox.StandardButton.Yes:
         return
-    
+
+    # For local-only mode, we initialize the MeloTTS model up front so that
+    # users see a clear, dedicated progress dialog instead of a blank/ghost
+    # window while the model is loading.
+    if mode == "local_only":
+        init_dialog = QProgressDialog(
+            "Initializing Korean TTS model…",
+            "Cancel",
+            0,
+            0,
+            mw,
+        )
+        init_dialog.setWindowTitle("Korean TTS")
+        init_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        init_dialog.setMinimumDuration(0)
+        init_dialog.show()
+        QCoreApplication.processEvents()
+        try:
+            available = is_local_tts_available()
+        finally:
+            init_dialog.reset()
+
+        if not available:
+            showWarning(
+                "Local Korean TTS model is not available. "
+                "Please check your MeloTTS installation and settings."
+            )
+            return
+
     # Process notes
     processed = 0
     generated = 0
