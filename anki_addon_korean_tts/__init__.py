@@ -43,35 +43,24 @@ except Exception:  # pragma: no cover - when running outside Anki GUI
     def tooltip(msg: str) -> None:  # type: ignore[override]
         print(msg)
 
-# Add MeloTTS to path if available.
-# 
-# We support two common layouts:
-# - Development: this add-on lives inside the monorepo that also contains
-#   the MeloTTS Python package in a sibling `MeloTTS` directory.
-# - Installed: MeloTTS is installed as a normal Python package and can be
-#   imported without any sys.path tweaks.
+# MeloTTS lazy-loading support.
 #
-# For development convenience we will probe for a sibling MeloTTS checkout and
-# add it to sys.path if present. This avoids hardcoding any user-specific
-# absolute paths.
+# We do NOT import MeloTTS at addon load time to keep Anki startup fast.
+# Instead, we lazy-load it only when local TTS is actually needed (when the user
+# clicks the local TTS button). This avoids loading the heavy torch/librosa stack
+# unnecessarily.
+#
+# Users can configure the MeloTTS path in the addon settings. If not configured,
+# we'll search common locations when first needed.
+
 _addon_dir = Path(__file__).resolve().parent
 _repo_root = _addon_dir.parent
-_candidate_melotts = _repo_root / "MeloTTS"
-if _candidate_melotts.exists():
-    sys.path.insert(0, str(_candidate_melotts))
 
-try:
-    from melo.api import TTS
-    MELOTTS_AVAILABLE = True
-except ImportError:
-    MELOTTS_AVAILABLE = False
-    TTS = None
-
-try:
-    # High-level endpoint API around TTS; preferred entrypoint.
-    from melo.simple_korean_tts import synthesize_korean_tts  # type: ignore[import]
-except ImportError:  # pragma: no cover - env-specific
-    synthesize_korean_tts = None  # type: ignore[assignment]
+# These will be set lazily when MeloTTS is first needed
+MELOTTS_AVAILABLE = False
+TTS = None
+synthesize_korean_tts = None
+_melotts_load_attempted = False
 
 # -----------------------------------------------------------------------------
 # Remote TTS configuration (driven by add-on settings)
@@ -191,6 +180,85 @@ def _apply_config_to_globals(cfg: dict[str, Any]) -> None:
 
 _CONFIG = _load_addon_config()
 _apply_config_to_globals(_CONFIG)
+
+
+def _try_load_melotts() -> bool:
+    """Lazy-load MeloTTS library when first needed.
+    
+    This function is called the first time local TTS is used, not at addon import
+    time. This keeps Anki startup fast and only loads the heavy ML libraries when
+    actually needed.
+    
+    Returns:
+        True if MeloTTS was successfully loaded, False otherwise.
+    """
+    global MELOTTS_AVAILABLE, TTS, synthesize_korean_tts, _melotts_load_attempted
+    
+    if _melotts_load_attempted:
+        return MELOTTS_AVAILABLE
+    
+    _melotts_load_attempted = True
+    
+    print("Korean TTS: Attempting to load MeloTTS library...", file=sys.stderr)
+    
+    # Build search paths for MeloTTS, with user-configured path first
+    search_paths = []
+    
+    # 1. User-configured path from settings (highest priority)
+    configured_path = str(_CONFIG.get("melotts_extra_path") or "").strip()
+    if configured_path:
+        p = Path(configured_path)
+        if p.exists():
+            search_paths.append(p)
+            print(f"Korean TTS: Checking user-configured path: {p}", file=sys.stderr)
+    
+    # 2. Common development/installation locations (fallbacks)
+    search_paths.extend([
+        _repo_root / "MeloTTS",  # Development: sibling to addon in monorepo
+        Path.home() / "Documents/GitHub/melotts-anki-kr/MeloTTS",  # Common monorepo location
+    ])
+    
+    # Try each path until we find a valid MeloTTS installation
+    melotts_path = None
+    for candidate in search_paths:
+        # Check if this looks like a valid MeloTTS directory
+        if candidate.exists() and (candidate / "melo" / "__init__.py").exists():
+            melotts_path = candidate
+            print(f"Korean TTS: Found MeloTTS at: {melotts_path}", file=sys.stderr)
+            break
+    
+    if not melotts_path:
+        print(
+            "Korean TTS: MeloTTS not found in any search path. "
+            "Please configure the MeloTTS path in addon settings "
+            "(Tools → Korean TTS Settings → Extra MeloTTS path)",
+            file=sys.stderr
+        )
+        MELOTTS_AVAILABLE = False
+        return False
+    
+    # Add MeloTTS to sys.path so we can import it
+    sys.path.insert(0, str(melotts_path))
+    
+    # Try to import MeloTTS
+    try:
+        from melo.api import TTS as TTS_Class
+        from melo.simple_korean_tts import synthesize_korean_tts as synth_fn
+        
+        # Update module-level globals
+        TTS = TTS_Class
+        synthesize_korean_tts = synth_fn
+        MELOTTS_AVAILABLE = True
+        
+        print("Korean TTS: MeloTTS loaded successfully!", file=sys.stderr)
+        return True
+        
+    except ImportError as e:
+        print(f"Korean TTS: Failed to import MeloTTS: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        MELOTTS_AVAILABLE = False
+        return False
 
 
 def _autodetect_local_server() -> None:
@@ -429,33 +497,49 @@ _LOCAL_TTS_PROBED: bool = False
 _LOCAL_TTS_AVAILABLE: bool = False
 
 
-def get_tts_model() -> TTS | None:
-    """Get or initialize the TTS model."""
+def get_tts_model():
+    """Get or initialize the TTS model.
+    
+    This will lazy-load MeloTTS if not already loaded, then initialize the model.
+    Returns None if MeloTTS library is not available or model initialization fails.
+    """
     global _tts_model
     
-    if not MELOTTS_AVAILABLE:
+    # Ensure MeloTTS is loaded first
+    if not _try_load_melotts():
+        return None
+    
+    if not MELOTTS_AVAILABLE or TTS is None:
+        print("Korean TTS: MeloTTS library not available", file=sys.stderr)
         return None
     
     if _tts_model is None:
         try:
             # Try to use a local offline model first. We check for a MeloTTS-Korean
-            # directory in the expected monorepo layout (sibling to MeloTTS and the
-            # add-on directory). This avoids hardcoding user-specific absolute paths
-            # while still supporting offline usage when the model files are present.
-            korean_model_dir = _repo_root / "MeloTTS-Korean"
+            # directory in multiple common locations to support both development and
+            # installed addon scenarios.
+            
+            model_search_paths = [
+                _repo_root / "MeloTTS-Korean",  # Dev: sibling to addon in monorepo
+                Path.home() / "Documents/GitHub/melotts-anki-kr/MeloTTS-Korean",  # Common monorepo location
+            ]
             
             config_path = None
             ckpt_path = None
             
-            if korean_model_dir.exists():
-                config_candidate = korean_model_dir / "config.json"
-                ckpt_candidate = korean_model_dir / "checkpoint.pth"
-                if config_candidate.exists() and ckpt_candidate.exists():
-                    config_path = config_candidate
-                    ckpt_path = ckpt_candidate
+            for korean_model_dir in model_search_paths:
+                if korean_model_dir.exists():
+                    config_candidate = korean_model_dir / "config.json"
+                    ckpt_candidate = korean_model_dir / "checkpoint.pth"
+                    if config_candidate.exists() and ckpt_candidate.exists():
+                        config_path = config_candidate
+                        ckpt_path = ckpt_candidate
+                        print(f"Korean TTS: Found local model at {korean_model_dir}", file=sys.stderr)
+                        break
             
             if config_path and ckpt_path:
                 # Use offline model
+                print("Korean TTS: Loading local offline model", file=sys.stderr)
                 _tts_model = TTS(
                     language='KR',
                     device='auto',
@@ -466,9 +550,14 @@ def get_tts_model() -> TTS | None:
             else:
                 # Fall back to the generic MeloTTS API, which will download from
                 # HuggingFace as needed.
+                print("Korean TTS: Local model not found, will use HuggingFace download", file=sys.stderr)
                 _tts_model = TTS(language='KR', device='auto')
+            
+            print("Korean TTS: Model initialized successfully", file=sys.stderr)
         except Exception as e:
-            showWarning(f"Failed to initialize Korean TTS model: {e}")
+            print(f"Korean TTS: Failed to initialize model: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
             return None
     
     return _tts_model
@@ -477,8 +566,9 @@ def get_tts_model() -> TTS | None:
 def is_local_tts_available() -> bool:
     """Return True if a local MeloTTS Korean model can be used.
 
-    This will try to initialize the model once per session; if initialization
-    fails, the explicit "local" generation option is disabled.
+    This will lazy-load MeloTTS and try to initialize the model once per session.
+    If either loading or initialization fails, the explicit "local" generation
+    option is disabled.
     """
 
     global _LOCAL_TTS_PROBED, _LOCAL_TTS_AVAILABLE
@@ -487,8 +577,22 @@ def is_local_tts_available() -> bool:
         return _LOCAL_TTS_AVAILABLE
 
     _LOCAL_TTS_PROBED = True
+    
+    # First, try to load MeloTTS library
+    if not _try_load_melotts():
+        print("Korean TTS: Cannot enable local TTS - MeloTTS library not available", file=sys.stderr)
+        _LOCAL_TTS_AVAILABLE = False
+        return False
+    
+    # Then, try to load the model
     model = get_tts_model()
     _LOCAL_TTS_AVAILABLE = bool(model)
+    
+    if _LOCAL_TTS_AVAILABLE:
+        print("Korean TTS: Local TTS is available and enabled", file=sys.stderr)
+    else:
+        print("Korean TTS: Local TTS disabled - model initialization failed", file=sys.stderr)
+    
     return _LOCAL_TTS_AVAILABLE
 
 
@@ -531,6 +635,12 @@ def _synthesize_to_tempfile(
 
     # Helper to perform local synthesis.
     def _local_synth() -> bool:
+        # Ensure MeloTTS is loaded first (lazy load on first use)
+        if not _try_load_melotts():
+            print("Local synth failed: MeloTTS library not available", file=sys.stderr)
+            return False
+        
+        # Prefer the high-level synthesize_korean_tts function if available
         if synthesize_korean_tts is not None:
             try:
                 synthesize_korean_tts(
@@ -543,6 +653,7 @@ def _synthesize_to_tempfile(
                 print(f"Local synth via synthesize_korean_tts failed: {e}", file=sys.stderr)
                 return False
 
+        # Fall back to direct TTS API if high-level function not available
         model = get_tts_model()
         if not model:
             return False
@@ -1301,6 +1412,11 @@ def smoketest_korean_tts(col: Any | None = None) -> bool:
     sample_text = "안녕하세요, 이것은 한국어 TTS 테스트입니다."
 
     try:
+        # First, try to load MeloTTS library
+        if not _try_load_melotts():
+            print("Korean TTS smoketest: Failed to load MeloTTS library")
+            return False
+        
         with NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             temp_path = tmp.name
 
@@ -1341,22 +1457,21 @@ def smoketest_korean_tts(col: Any | None = None) -> bool:
 
     except Exception as e:
         print("Korean TTS smoketest FAILED:", e)
+        import traceback
+        traceback.print_exc()
         return False
 
 
 def init_addon() -> None:
     """Initialize the add-on."""
-    # Always set up the menu and hooks, even if MeloTTS isn't available yet
-    # The menu item will show an error when clicked if MeloTTS isn't available
+    # Set up menus and hooks.
+    # MeloTTS will be lazy-loaded when local TTS is first used, so we don't
+    # check for it at addon init time to keep Anki startup fast.
     setup_menu()
     setup_hooks()
     
-    if not MELOTTS_AVAILABLE:
-        if mw:
-            tooltip("Korean TTS add-on loaded, but MeloTTS library not found. Please check paths.")
-    else:
-        if mw:
-            tooltip("Korean TTS add-on loaded successfully!")
+    if mw:
+        tooltip("Korean TTS add-on loaded successfully!")
 
 
 # Initialize when Anki loads (only in real Anki GUI, not in headless tests)
