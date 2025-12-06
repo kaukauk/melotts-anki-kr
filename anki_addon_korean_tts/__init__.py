@@ -949,11 +949,33 @@ def _prepare_field_for_tts(
     if not korean_text:
         return False, current_value, ""
 
-    target_fname = _korean_tts_filename(int(note.id), field_name, korean_text)
+    note_id = int(note.id)
+    target_fname = _korean_tts_filename(note_id, field_name, korean_text)
 
-    # If we already have an exact match, nothing to do.
-    if f"[sound:{target_fname}]" in current_value:
-        return False, current_value, target_fname
+    # We encode a short hash of the Korean text in the filename. Anki may
+    # rename media files (e.g. appending -1), so we can't rely on an exact
+    # filename match. Instead, we look for any existing ktts_ sound tag whose
+    # embedded hash matches the current text; if found, we treat the audio as
+    # up to date and skip regeneration.
+    safe_field = re.sub(r"[^A-Za-z0-9_]+", "_", field_name)
+    text_hash = re.search(r"_([0-9a-f]{8})\.wav$", target_fname)
+    wanted_hash = text_hash.group(1) if text_hash else ""
+
+    # Pattern: [sound:ktts_<noteid>_<field>_<hash>(-suffix?).wav]
+    pattern = (
+        r"\[sound:(ktts_"
+        + re.escape(str(note_id))
+        + "_"
+        + re.escape(safe_field)
+        + r"_([0-9a-f]{8})(?:-[^.\]]+)?\.wav)\]"
+    )
+
+    match = re.search(pattern, current_value)
+    if match:
+        existing_hash = match.group(2)
+        if existing_hash == wanted_hash:
+            # Audio is already in sync with the current text.
+            return False, current_value, match.group(1)
 
     # Otherwise, strip any older Korean TTS sound tags we previously injected,
     # so we don't accumulate multiple outdated audio references.
