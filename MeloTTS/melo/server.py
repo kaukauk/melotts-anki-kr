@@ -25,11 +25,12 @@ Intended deployment (recommended):
   tts-server.your-tailnet.ts.net, or with a standard TLS reverse proxy.
 """
 
+import base64
 import io
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -58,6 +59,27 @@ app = FastAPI(title=API_TITLE, version=API_VERSION)
 
 class KoreanTTSRequest(BaseModel):
     text: str = Field(..., description="Korean text to synthesize.")
+    speed: float = Field(
+        1.0,
+        gt=0.0,
+        le=5.0,
+        description="Playback speed multiplier (1.0 = normal).",
+    )
+    device: str = Field(
+        "auto",
+        description="Torch device hint (auto / cpu / cuda / mps).",
+    )
+
+
+class KoreanTTSBatchItem(BaseModel):
+    id: str = Field(..., description="Caller-provided identifier for this item.")
+    text: str = Field(..., description="Korean text to synthesize.")
+
+
+class KoreanTTSBatchRequest(BaseModel):
+    items: List[KoreanTTSBatchItem] = Field(
+        ..., description="Batch of texts to synthesize."
+    )
     speed: float = Field(
         1.0,
         gt=0.0,
@@ -191,6 +213,68 @@ def synthesize_korean(
             "Cache-Control": "no-store",
         },
     )
+
+
+@app.post(
+    "/api/v1/tts/korean_batch",
+    summary="Synthesize Korean speech for a batch of texts",
+    response_description="JSON with base64-encoded WAV audio per item.",
+)
+def synthesize_korean_batch(
+    body: KoreanTTSBatchRequest,
+    _: None = Depends(_require_api_key),
+) -> dict:
+    """Convert a batch of Korean texts to speech in a single request.
+
+    The response is a JSON object of the form:
+
+        {
+          "items": [
+            {"id": "item-id-1", "audio_b64": "..."},
+            {"id": "item-id-2", "audio_b64": "..."},
+            ...
+          ]
+        }
+    """
+
+    if not body.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Batch must contain at least one item.",
+        )
+
+    # Reuse the cached Korean TTS model across the entire batch for efficiency.
+    model = get_korean_tts_model(device=body.device)
+    speaker_ids = model.hps.data.spk2id
+    speaker_id = getattr(speaker_ids, "KR", list(speaker_ids.values())[0])
+
+    results: List[dict[str, str]] = []
+
+    for item in body.items:
+        text = item.text.strip()
+        if not text:
+            continue
+        if len(text) > MAX_TEXT_LENGTH:
+            # Skip over-long items; the client can decide how to handle this.
+            continue
+
+        buf = io.BytesIO()
+        model.tts_to_file(
+            text,
+            speaker_id,
+            buf,
+            speed=body.speed,
+            quiet=True,
+            format="wav",
+        )
+        audio_bytes = buf.getvalue()
+        if not audio_bytes:
+            continue
+
+        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        results.append({"id": item.id, "audio_b64": audio_b64})
+
+    return {"items": results}
 
 
 def main() -> None:

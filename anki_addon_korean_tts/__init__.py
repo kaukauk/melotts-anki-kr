@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import hashlib
+import base64
 from pathlib import Path
 from typing import Any, Optional
 import json
@@ -218,6 +219,120 @@ def _remote_synthesize_korean_tts(
         return False
 
     return True
+
+
+def _remote_synthesize_korean_tts_batch(
+    items: list[tuple[str, str]],
+    *,
+    speed: float = 1.0,
+) -> dict[str, bytes]:
+    """Batch version of _remote_synthesize_korean_tts.
+
+    Args:
+        items: Sequence of (item_id, text) to synthesize.
+
+    Returns:
+        Mapping of item_id -> raw WAV bytes for successfully synthesized items.
+    """
+
+    if not _REMOTE_TTS_ENABLED or not items:
+        return {}
+
+    payload_items: list[dict[str, str]] = []
+    for item_id, text in items:
+        text = text.strip()
+        if not text:
+            continue
+        payload_items.append({"id": item_id, "text": text})
+
+    if not payload_items:
+        return {}
+
+    batch_endpoint = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean_batch"
+
+    batch_payload = {
+        "items": payload_items,
+        "speed": float(speed),
+        "device": "auto",
+    }
+
+    data = json.dumps(batch_payload).encode("utf-8")
+
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if _REMOTE_TTS_API_KEY:
+        headers["X-API-Key"] = _REMOTE_TTS_API_KEY
+
+    req = urllib.request.Request(
+        batch_endpoint,
+        data=data,
+        headers=headers,
+        method="POST",
+    )
+
+    context = ssl.create_default_context()
+
+    try:
+        with urllib.request.urlopen(
+            req,
+            timeout=_REMOTE_TTS_CONNECT_TIMEOUT + _REMOTE_TTS_READ_TIMEOUT,
+            context=context,
+        ) as resp:
+            status_code = getattr(resp, "status", 200)
+            if status_code != 200:
+                print(
+                    f"Remote Korean TTS batch: unexpected HTTP status {status_code}",
+                    file=sys.stderr,
+                )
+                return {}
+
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/json" not in content_type:
+                print(
+                    "Remote Korean TTS batch: expected JSON response, "
+                    f"got Content-Type={content_type!r}",
+                    file=sys.stderr,
+                )
+                return {}
+
+            body = resp.read()
+    except urllib.error.URLError as e:
+        print(
+            f"Remote Korean TTS batch network error talking to "
+            f"{batch_endpoint!r}: {e}",
+            file=sys.stderr,
+        )
+        return {}
+    except Exception as e:
+        print(f"Remote Korean TTS batch unexpected error: {e}", file=sys.stderr)
+        return {}
+
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except Exception as e:
+        print(f"Remote Korean TTS batch: failed to decode JSON: {e}", file=sys.stderr)
+        return {}
+
+    results: dict[str, bytes] = {}
+    for item in decoded.get("items", []):
+        item_id = item.get("id")
+        audio_b64 = item.get("audio_b64")
+        if not item_id or not audio_b64:
+            continue
+        try:
+            audio_bytes = base64.b64decode(audio_b64)
+        except Exception as e:
+            print(
+                f"Remote Korean TTS batch: failed to decode base64 for id={item_id!r}: {e}",
+                file=sys.stderr,
+            )
+            continue
+        if not audio_bytes:
+            continue
+        results[item_id] = audio_bytes
+
+    return results
 
 
 # Global TTS model instance (cached to avoid reloading for local fallback)
@@ -629,6 +744,51 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
         immediate=True,
     )
 
+    # Internal helper to run a remote-only batch using the HTTP batch API.
+    def _run_remote_batch(batch_items: list[dict[str, Any]]) -> None:
+        nonlocal processed, generated, errors
+
+        if not batch_items:
+            return
+
+        # Map target_fname -> (note, field, base_value)
+        id_to_meta: dict[str, tuple[Any, str, str]] = {}
+        request_items: list[tuple[str, str]] = []
+
+        for item in batch_items:
+            target_fname = item["target_fname"]
+            korean_text = item["korean_text"]
+            request_items.append((target_fname, korean_text))
+            id_to_meta[target_fname] = (
+                item["note"],
+                item["korean_field"],
+                item["base_value"],
+            )
+
+        remote_results = _remote_synthesize_korean_tts_batch(request_items)
+
+        for target_fname, (note, korean_field, base_value) in id_to_meta.items():
+            processed += 1
+            audio_bytes = remote_results.get(target_fname)
+            if not audio_bytes:
+                errors += 1
+                continue
+
+            try:
+                final_filename = mw.col.media.write_data(target_fname, audio_bytes)
+                note[korean_field] = (
+                    base_value + f" [sound:{final_filename}]"
+                )
+                mw.col.update_note(note)
+                generated += 1
+            except Exception as e:  # pragma: no cover - environment-specific
+                errors += 1
+                print(f"Error writing media for {target_fname!r}: {e}", file=sys.stderr)
+
+    # Number of notes to send per remote batch request when mode=="remote_only".
+    REMOTE_BATCH_SIZE = 16
+    pending_remote: list[dict[str, Any]] = []
+
     try:
         for i, note_id in enumerate(note_ids):
             if mw.progress.want_cancel():
@@ -665,39 +825,59 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                     processed += 1
                     continue
                 # Generate TTS according to the requested mode.
-                import tempfile
-
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as tmp:
-                    temp_path = tmp.name
-
-                ok = _synthesize_to_tempfile(
-                    korean_text,
-                    temp_path,
-                    mode=mode,
-                )
-                if not ok:
-                    errors += 1
-                    continue
-
-                # Add to Anki media folder with a deterministic, text-based name.
-                with open(temp_path, "rb") as f:
-                    final_filename = mw.col.media.write_data(
-                        target_fname, f.read()
+                if mode == "remote_only":
+                    # Defer to the HTTP batch API; we collect items and send
+                    # them in groups to minimise per-note roundtrips.
+                    pending_remote.append(
+                        {
+                            "note": note,
+                            "note_id": note_id,
+                            "korean_field": korean_field,
+                            "korean_text": korean_text,
+                            "base_value": base_value,
+                            "target_fname": target_fname,
+                        }
                     )
+                    if len(pending_remote) >= REMOTE_BATCH_SIZE:
+                        _run_remote_batch(pending_remote)
+                        pending_remote.clear()
+                else:
+                    # Local-only and auto modes reuse the existing per-note
+                    # helper, which will try the remote server first (for auto)
+                    # and fall back to local synthesis when available.
+                    import tempfile
 
-                # Clean up temp file
-                os.unlink(temp_path)
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".wav", delete=False
+                    ) as tmp:
+                        temp_path = tmp.name
 
-                # Add sound tag to the field
-                note[korean_field] = (
-                    base_value + f" [sound:{final_filename}]"
-                )
-                mw.col.update_note(note)
+                    ok = _synthesize_to_tempfile(
+                        korean_text,
+                        temp_path,
+                        mode=mode,
+                    )
+                    if not ok:
+                        errors += 1
+                        continue
 
-                generated += 1
-                processed += 1
+                    # Add to Anki media folder with a deterministic, text-based name.
+                    with open(temp_path, "rb") as f:
+                        final_filename = mw.col.media.write_data(
+                            target_fname, f.read()
+                        )
+
+                    # Clean up temp file
+                    os.unlink(temp_path)
+
+                    # Add sound tag to the field
+                    note[korean_field] = (
+                        base_value + f" [sound:{final_filename}]"
+                    )
+                    mw.col.update_note(note)
+
+                    generated += 1
+                    processed += 1
 
             except Exception as e:
                 # Log full traceback to the console to aid debugging.
@@ -705,6 +885,10 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
                 errors += 1
                 print(f"Error processing note {note_id}: {e}")
                 traceback.print_exc()
+        # Flush any remaining remote items.
+        if mode == "remote_only" and pending_remote:
+            _run_remote_batch(pending_remote)
+            pending_remote.clear()
     finally:
         mgr.finish()
 
