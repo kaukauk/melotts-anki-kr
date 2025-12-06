@@ -19,3 +19,4 @@
 
 - **melotts_extra_path**: Optional additional path to search for MeloTTS library (leave empty unless you have a custom installation)
 
+

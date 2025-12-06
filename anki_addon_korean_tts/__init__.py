@@ -21,6 +21,7 @@ import json
 import ssl
 import urllib.error
 import urllib.request
+import warnings
 
 try:
     import aqt
@@ -42,6 +43,15 @@ except Exception:  # pragma: no cover - when running outside Anki GUI
 
     def tooltip(msg: str) -> None:  # type: ignore[override]
         print(msg)
+
+# Suppress particularly noisy but harmless warnings that tend to clutter Anki's
+# error/debug console, especially during the first local TTS run.
+warnings.filterwarnings(
+    "ignore",
+    message="torch.nn.utils.weight_norm is deprecated in favor of torch.nn.utils.parametrizations.weight_norm.",
+    category=UserWarning,
+)
+
 
 # MeloTTS lazy-loading support.
 #
@@ -199,7 +209,11 @@ def _try_load_melotts() -> bool:
     
     _melotts_load_attempted = True
     
-    print("Korean TTS: Attempting to load MeloTTS library...", file=sys.stderr)
+    # In the Anki GUI, avoid printing informational messages to stderr, as Anki
+    # may treat stderr output from add-ons as "errors" and show a popup. In
+    # headless/test environments we keep stderr logging for easier debugging.
+    if not _ANKI_GUI_AVAILABLE:
+        print("Korean TTS: Attempting to load MeloTTS library...", file=sys.stderr)
     
     # Build search paths for MeloTTS, with user-configured path first
     search_paths = []
@@ -210,7 +224,8 @@ def _try_load_melotts() -> bool:
         p = Path(configured_path)
         if p.exists():
             search_paths.append(p)
-            print(f"Korean TTS: Checking user-configured path: {p}", file=sys.stderr)
+            if not _ANKI_GUI_AVAILABLE:
+                print(f"Korean TTS: Checking user-configured path: {p}", file=sys.stderr)
     
     # 2. Common development/installation locations (fallbacks)
     search_paths.extend([
@@ -224,7 +239,8 @@ def _try_load_melotts() -> bool:
         # Check if this looks like a valid MeloTTS directory
         if candidate.exists() and (candidate / "melo" / "__init__.py").exists():
             melotts_path = candidate
-            print(f"Korean TTS: Found MeloTTS at: {melotts_path}", file=sys.stderr)
+            if not _ANKI_GUI_AVAILABLE:
+                print(f"Korean TTS: Found MeloTTS at: {melotts_path}", file=sys.stderr)
             break
     
     if not melotts_path:
@@ -250,7 +266,8 @@ def _try_load_melotts() -> bool:
         synthesize_korean_tts = synth_fn
         MELOTTS_AVAILABLE = True
         
-        print("Korean TTS: MeloTTS loaded successfully!", file=sys.stderr)
+        if not _ANKI_GUI_AVAILABLE:
+            print("Korean TTS: MeloTTS loaded successfully!", file=sys.stderr)
         return True
         
     except ImportError as e:
@@ -534,12 +551,14 @@ def get_tts_model():
                     if config_candidate.exists() and ckpt_candidate.exists():
                         config_path = config_candidate
                         ckpt_path = ckpt_candidate
-                        print(f"Korean TTS: Found local model at {korean_model_dir}", file=sys.stderr)
+                        if not _ANKI_GUI_AVAILABLE:
+                            print(f"Korean TTS: Found local model at {korean_model_dir}", file=sys.stderr)
                         break
             
             if config_path and ckpt_path:
                 # Use offline model
-                print("Korean TTS: Loading local offline model", file=sys.stderr)
+                if not _ANKI_GUI_AVAILABLE:
+                    print("Korean TTS: Loading local offline model", file=sys.stderr)
                 _tts_model = TTS(
                     language='KR',
                     device='auto',
@@ -550,10 +569,12 @@ def get_tts_model():
             else:
                 # Fall back to the generic MeloTTS API, which will download from
                 # HuggingFace as needed.
-                print("Korean TTS: Local model not found, will use HuggingFace download", file=sys.stderr)
+                if not _ANKI_GUI_AVAILABLE:
+                    print("Korean TTS: Local model not found, will use HuggingFace download", file=sys.stderr)
                 _tts_model = TTS(language='KR', device='auto')
             
-            print("Korean TTS: Model initialized successfully", file=sys.stderr)
+            if not _ANKI_GUI_AVAILABLE:
+                print("Korean TTS: Model initialized successfully", file=sys.stderr)
         except Exception as e:
             print(f"Korean TTS: Failed to initialize model: {e}", file=sys.stderr)
             import traceback
@@ -588,10 +609,11 @@ def is_local_tts_available() -> bool:
     model = get_tts_model()
     _LOCAL_TTS_AVAILABLE = bool(model)
     
-    if _LOCAL_TTS_AVAILABLE:
-        print("Korean TTS: Local TTS is available and enabled", file=sys.stderr)
-    else:
-        print("Korean TTS: Local TTS disabled - model initialization failed", file=sys.stderr)
+    if not _ANKI_GUI_AVAILABLE:
+        if _LOCAL_TTS_AVAILABLE:
+            print("Korean TTS: Local TTS is available and enabled", file=sys.stderr)
+        else:
+            print("Korean TTS: Local TTS disabled - model initialization failed", file=sys.stderr)
     
     return _LOCAL_TTS_AVAILABLE
 
@@ -900,18 +922,6 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     assert mode in ("remote_only", "local_only", "auto")
 
-    # For local-only mode, verify availability up front so we can fail fast
-    # instead of erroring per-note. For "auto" mode we intentionally skip this
-    # check so that the remote server can still be used even when no local
-    # model is available; in that case, "auto" effectively behaves like
-    # "remote_only", with local synthesis used only when present.
-    if mode == "local_only":
-        if synthesize_korean_tts is None and get_tts_model() is None:
-            showWarning(
-                "Local Korean TTS model is not available. Please check MeloTTS installation."
-            )
-            return
-    
     # Get notes in the current deck only
     # "deck:current" uses the currently selected deck in the deck browser.
     note_ids = mw.col.find_notes("deck:current")
@@ -1110,18 +1120,55 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
 
 def batch_generate_tts_server() -> None:
-    """Public entrypoint: server-only batch generation for current deck."""
-    _batch_generate_tts_impl(mode="remote_only")
+    """Public entrypoint: server-only batch generation for current deck.
+
+    This wrapper ensures that any unexpected exceptions are handled gracefully
+    and reported via Anki's normal warning UI instead of triggering the
+    generic addon error dialog.
+    """
+    try:
+        _batch_generate_tts_impl(mode="remote_only")
+    except Exception as e:  # pragma: no cover - defensive programming
+        import traceback
+
+        print("Korean TTS: server batch generation failed:", e, file=sys.stderr)
+        traceback.print_exc()
+        showWarning(f"Korean TTS server batch generation failed: {e}")
 
 
 def batch_generate_tts_local() -> None:
-    """Public entrypoint: local-only batch generation for current deck."""
-    _batch_generate_tts_impl(mode="local_only")
+    """Public entrypoint: local-only batch generation for current deck.
+
+    We wrap the internal implementation in a broad try/except so that any
+    unexpected issues during model loading or synthesis do not bubble up as
+    uncaught exceptions in Anki. Users will see a clear warning instead of
+    the full debug dialog, and partial progress (if any) is still preserved.
+    """
+    try:
+        _batch_generate_tts_impl(mode="local_only")
+    except Exception as e:  # pragma: no cover - defensive programming
+        import traceback
+
+        print("Korean TTS: local batch generation failed:", e, file=sys.stderr)
+        traceback.print_exc()
+        showWarning(f"Korean TTS local batch generation failed: {e}")
 
 
 def batch_generate_tts() -> None:
-    """Backwards-compatible entrypoint: auto (server, then local fallback)."""
-    _batch_generate_tts_impl(mode="auto")
+    """Backwards-compatible entrypoint: auto (server, then local fallback).
+
+    As with the explicit server/local entrypoints, we defensively catch any
+    unexpected exceptions here to avoid triggering Anki's generic addon error
+    dialog, while still logging a full traceback to the console.
+    """
+    try:
+        _batch_generate_tts_impl(mode="auto")
+    except Exception as e:  # pragma: no cover - defensive programming
+        import traceback
+
+        print("Korean TTS: auto batch generation failed:", e, file=sys.stderr)
+        traceback.print_exc()
+        showWarning(f"Korean TTS batch generation failed: {e}")
 
 
 if _ANKI_GUI_AVAILABLE:

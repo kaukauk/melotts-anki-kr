@@ -13,3 +13,4 @@ UVICORN_BIN="${ROOT_DIR}/anki/out/pyenv/bin/uvicorn"
 exec "${UVICORN_BIN}" melo.server:app --host 0.0.0.0 --port 8000 "$@"
 
 
+
