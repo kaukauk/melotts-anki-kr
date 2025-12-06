@@ -37,6 +37,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .api import TTS
+from .simple_korean_tts import get_korean_tts_model
 
 
 API_TITLE = "MeloTTS Korean TTS Service"
@@ -96,16 +97,10 @@ def _require_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key"))
 
 
 def _find_local_korean_model_dir() -> Optional[Path]:
-    """Return the path to the local MeloTTS-Korean model dir if it exists.
+    """(Legacy) path resolver for MeloTTS-Korean model dir.
 
-    Expected layout (as in this repo):
-
-        repo_root/
-          MeloTTS/
-          MeloTTS-Korean/
-
-    When this is not present, callers can still rely on remote download via
-    HuggingFace (TTS(use_hf=True)).
+    Kept for backwards compatibility but no longer used directly, as we now
+    rely on the shared cached model loader in `simple_korean_tts`.
     """
 
     here = Path(__file__).resolve()
@@ -115,60 +110,28 @@ def _find_local_korean_model_dir() -> Optional[Path]:
 
 
 def _synthesize_korean_once(params: SynthParams) -> bytes:
-    """Synthesize Korean speech for a single request.
+    """Synthesize Korean speech for a single request using a cached model.
 
-    This function **always** constructs a fresh TTS model instance and discards
-    it after use, so the model only lives in memory for the duration of the
-    request.
+    We now delegate to the shared cached model loader in simple_korean_tts so
+    that the heavy MeloTTS model is constructed once and reused across many
+    HTTP requests, matching the behaviour used in the local Anki client.
     """
 
-    model_dir = _find_local_korean_model_dir()
-    config_path: Optional[str] = None
-    ckpt_path: Optional[str] = None
+    model = get_korean_tts_model(device=params.device)
 
-    if model_dir is not None:
-        cfg = model_dir / "config.json"
-        ckpt = model_dir / "checkpoint.pth"
-        if cfg.exists() and ckpt.exists():
-            config_path = str(cfg)
-            ckpt_path = str(ckpt)
+    speaker_ids = model.hps.data.spk2id
+    speaker_id = getattr(speaker_ids, "KR", list(speaker_ids.values())[0])
 
-    if config_path and ckpt_path:
-        model = TTS(
-            language="KR",
-            device=params.device,
-            config_path=config_path,
-            ckpt_path=ckpt_path,
-            use_hf=False,
-        )
-    else:
-        # Fall back to HuggingFace download if local files are missing.
-        model = TTS(language="KR", device=params.device)
-
-    try:
-        speaker_ids = model.hps.data.spk2id
-        speaker_id = getattr(speaker_ids, "KR", list(speaker_ids.values())[0])
-
-        buf = io.BytesIO()
-        model.tts_to_file(
-            params.text,
-            speaker_id,
-            buf,
-            speed=params.speed,
-            quiet=True,
-            format="wav",
-        )
-        audio_bytes = buf.getvalue()
-    finally:
-        # Ensure that we promptly release model resources between requests.
-        del model  # type: ignore[unused-ignore]
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            # Safe to ignore if CUDA is not available.
-            pass
-
-    return audio_bytes
+    buf = io.BytesIO()
+    model.tts_to_file(
+        params.text,
+        speaker_id,
+        buf,
+        speed=params.speed,
+        quiet=True,
+        format="wav",
+    )
+    return buf.getvalue()
 
 
 @app.get("/health", summary="Liveness probe")
