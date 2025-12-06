@@ -1237,22 +1237,13 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     # users see a clear, dedicated progress dialog instead of a blank/ghost
     # window while the model is loading.
     if mode == "local_only":
-        init_dialog = QProgressDialog(
-            "Initializing Korean TTS model…",
-            "Cancel",
-            0,
-            0,
-            mw,
-        )
-        init_dialog.setWindowTitle("Korean TTS")
-        init_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        init_dialog.setMinimumDuration(0)
+        init_dialog = KoreanTtsInitDialog(mw)
         init_dialog.show()
         QCoreApplication.processEvents()
         try:
             available = is_local_tts_available()
         finally:
-            init_dialog.reset()
+            init_dialog.close()
 
         if not available:
             showWarning(
@@ -1538,6 +1529,31 @@ def batch_generate_tts() -> None:
 
 
 if _ANKI_GUI_AVAILABLE:
+
+    class KoreanTtsInitDialog(QDialog):
+        """Simple modal dialog shown while the local TTS model initializes.
+
+        On some platforms/window managers, QProgressDialog can render oddly when
+        the range is (0, 0). A plain QDialog with a busy progress bar and a
+        clear label tends to behave more consistently.
+        """
+
+        def __init__(self, parent: Any) -> None:
+            super().__init__(parent)
+            self.setWindowTitle("Korean TTS")
+            layout = QVBoxLayout(self)
+
+            label = QLabel("Initializing Korean TTS model…", self)
+            layout.addWidget(label)
+
+            bar = QProgressBar(self)
+            # Indeterminate/busy mode.
+            bar.setRange(0, 0)
+            layout.addWidget(bar)
+
+            self.setLayout(layout)
+            self.setWindowModality(Qt.WindowModality.WindowModal)
+            self.setMinimumWidth(380)
 
     class KoreanTtsSettingsDialog(QDialog):
         """Simple settings dialog for configuring the Korean TTS add-on."""
