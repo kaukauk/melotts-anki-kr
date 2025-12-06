@@ -107,38 +107,16 @@ _REMOTE_TTS_ENABLED = os.environ.get("KOREAN_TTS_REMOTE_ENABLED", "1") not in (
 
 
 def _autodetect_local_server() -> None:
-    """If no explicit server URL is set, prefer a local dev server if present.
+    """Disabled local-autodetect in this configuration.
 
-    This allows you to simply run `python -m melo.server` on the same machine
-    and have the add-on automatically send traffic to http://127.0.0.1:8000
-    without additional configuration.
+    We always target the explicit KOREAN_TTS_SERVER_URL or the default remote
+    host (tts-server.your-tailnet.ts.net:8000), and avoid probing
+    127.0.0.1:8000 from inside Anki, as that can be misleading when Anki runs
+    on a different machine than the TTS server.
     """
 
-    global _REMOTE_TTS_BASE_URL, _REMOTE_TTS_ENDPOINT
-
-    # If the user has explicitly configured a URL, never override it.
-    if "KOREAN_TTS_SERVER_URL" in os.environ:
-        return
-
-    try:
-        req = urllib.request.Request(
-            "http://127.0.0.1:8000/health",
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=0.5) as resp:
-            status_code = getattr(resp, "status", 200)
-            if status_code == 200:
-                _REMOTE_TTS_BASE_URL = "http://127.0.0.1:8000"
-                _REMOTE_TTS_ENDPOINT = (
-                    _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
-                )
-                print(
-                    "Remote Korean TTS: detected local server at http://127.0.0.1:8000",
-                    file=sys.stderr,
-                )
-    except Exception:
-        # Silent failure: we'll stick with the default base URL.
-        pass
+    # Intentionally a no-op: leave _REMOTE_TTS_BASE_URL as configured above.
+    return
 
 
 _autodetect_local_server()
