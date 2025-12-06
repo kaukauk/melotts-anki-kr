@@ -76,6 +76,8 @@ def main() -> int:
     if anki_pylib.exists():
         sys.path.insert(0, str(anki_pylib))
 
+    korean_tts = None
+
     # Prefer importing the add-on directly from this repo's source tree so that
     # the smoketest always exercises the current branch, even if the installed
     # Anki add-on is out of date.
@@ -86,10 +88,11 @@ def main() -> int:
             import anki_addon_korean_tts as korean_tts  # type: ignore[import]
         except Exception as e:  # pragma: no cover - environment-specific
             print("Korean TTS smoketest: failed to import repo add-on:", e)
-            # Fall back to direct MeloTTS smoketest if Anki is not available.
-            return _direct_melotts_smoketest(root)
-    else:
-        # Fallback: import from the user's Anki addons21 folder, if present.
+            korean_tts = None
+
+    # Fallback: import from the user's Anki addons21 folder, if the repo-based
+    # import was not successful.
+    if korean_tts is None:
         addons_root = Path.home() / ".local" / "share" / "Anki2" / "addons21"
         addon_dir = addons_root / "korean_tts"
 
@@ -98,7 +101,8 @@ def main() -> int:
                 "Korean TTS smoketest: add-on directory not found at",
                 addon_dir,
             )
-            return 1
+            # Fall back to direct MeloTTS smoketest if the add-on is not present.
+            return _direct_melotts_smoketest(root)
 
         # Insert addons21 so `import korean_tts` works.
         sys.path.insert(0, str(addons_root))
