@@ -82,8 +82,12 @@ except ImportError:  # pragma: no cover - env-specific
 _DEFAULT_REMOTE_HOST = "tts-server.your-tailnet.ts.net"
 _DEFAULT_REMOTE_HTTP_URL = f"http://{_DEFAULT_REMOTE_HOST}:8000"
 
-_REMOTE_TTS_BASE_URL = _DEFAULT_REMOTE_HTTP_URL
-_REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean"
+_REMOTE_TTS_BASE_URL = os.environ.get(
+    "KOREAN_TTS_SERVER_URL",
+    _DEFAULT_REMOTE_HTTP_URL,
+).rstrip("/")
+_REMOTE_TTS_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean"
+_REMOTE_TTS_BATCH_ENDPOINT = _REMOTE_TTS_BASE_URL + "/api/v1/tts/korean_batch"
 
 # Optional shared secret for simple API-key based auth. When set on both the
 # server and the client, requests must include this value in X-API-Key.
@@ -248,8 +252,6 @@ def _remote_synthesize_korean_tts_batch(
     if not payload_items:
         return {}
 
-    batch_endpoint = _REMOTE_TTS_BASE_URL.rstrip("/") + "/api/v1/tts/korean_batch"
-
     batch_payload = {
         "items": payload_items,
         "speed": float(speed),
@@ -265,7 +267,7 @@ def _remote_synthesize_korean_tts_batch(
         headers["X-API-Key"] = _REMOTE_TTS_API_KEY
 
     req = urllib.request.Request(
-        batch_endpoint,
+        _REMOTE_TTS_BATCH_ENDPOINT,
         data=data,
         headers=headers,
         method="POST",
@@ -300,7 +302,7 @@ def _remote_synthesize_korean_tts_batch(
     except urllib.error.URLError as e:
         print(
             f"Remote Korean TTS batch network error talking to "
-            f"{batch_endpoint!r}: {e}",
+            f"{_REMOTE_TTS_BATCH_ENDPOINT!r}: {e}",
             file=sys.stderr,
         )
         return {}

@@ -94,14 +94,3 @@ def synthesize_korean_tts(
 
     model.tts_to_file(text, speaker_id, output_path, speed=speed, quiet=True)
     return output_path
-
-{
-  "cells": [],
-  "metadata": {
-    "language_info": {
-      "name": "python"
-    }
-  },
-  "nbformat": 4,
-  "nbformat_minor": 2
-}

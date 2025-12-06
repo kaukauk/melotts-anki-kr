@@ -258,21 +258,27 @@ def synthesize_korean_batch(
             # Skip over-long items; the client can decide how to handle this.
             continue
 
-        buf = io.BytesIO()
-        model.tts_to_file(
-            text,
-            speaker_id,
-            buf,
-            speed=body.speed,
-            quiet=True,
-            format="wav",
-        )
-        audio_bytes = buf.getvalue()
-        if not audio_bytes:
-            continue
+        try:
+            buf = io.BytesIO()
+            model.tts_to_file(
+                text,
+                speaker_id,
+                buf,
+                speed=body.speed,
+                quiet=True,
+                format="wav",
+            )
+            audio_bytes = buf.getvalue()
+            if not audio_bytes:
+                continue
 
-        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-        results.append({"id": item.id, "audio_b64": audio_b64})
+            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            results.append({"id": item.id, "audio_b64": audio_b64})
+        except Exception:  # pragma: no cover - runtime specific
+            # Log and skip failures for individual items in the batch, allowing
+            # the rest to succeed. The client can detect missing IDs in the
+            # response and retry or report them as needed.
+            continue
 
     return {"items": results}
 
