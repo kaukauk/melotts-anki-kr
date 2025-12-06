@@ -106,6 +106,9 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "last_avg_seconds_per_note": None,
     "last_batch_total_notes": None,
     "last_batch_timestamp": None,
+    # History of previous batch runs for ETA estimation. Each entry is a dict:
+    # {"notes": int, "chars": int, "seconds": float}.
+    "eta_history": [],
 }
 
 
@@ -224,6 +227,145 @@ def _get_effective_speed() -> float:
 
     # Clamp to a sensible range.
     return max(0.1, min(2.0, speed))
+
+
+def _record_eta_sample(notes: int, chars: int, seconds: float) -> None:
+    """Record a single batch run for future ETA estimation."""
+
+    if notes <= 0 or seconds <= 0:
+        return
+
+    try:
+        hist = _CONFIG.get("eta_history")
+        if not isinstance(hist, list):
+            hist = []
+
+        hist.append(
+            {
+                "notes": int(notes),
+                "chars": int(max(chars, 0)),
+                "seconds": float(seconds),
+            }
+        )
+
+        # Keep only the most recent N samples to avoid unbounded growth.
+        MAX_SAMPLES = 50
+        if len(hist) > MAX_SAMPLES:
+            hist = hist[-MAX_SAMPLES:]
+
+        _CONFIG["eta_history"] = hist
+        _save_addon_config(_CONFIG)
+    except Exception:
+        # ETA history is best-effort; failures here should not affect TTS.
+        pass
+
+
+def _estimate_eta_seconds(notes: int, chars: int) -> Optional[float]:
+    """Estimate batch runtime in seconds using past runs.
+
+    Uses simple multiple linear regression on (notes, chars) -> seconds when
+    at least 3 historical samples are available. Falls back to the last
+    average-seconds-per-note when insufficient data is present.
+    """
+
+    if notes <= 0:
+        return None
+
+    hist = _CONFIG.get("eta_history") or []
+    if not isinstance(hist, list):
+        hist = []
+
+    samples: list[tuple[float, float, float]] = []
+    for entry in hist:
+        try:
+            n = float(entry.get("notes", 0))
+            c = float(entry.get("chars", 0))
+            s = float(entry.get("seconds", 0.0))
+        except Exception:
+            continue
+        if n > 0 and s > 0:
+            samples.append((n, c, s))
+
+    if len(samples) < 3:
+        # Fallback: use last average seconds per note if available.
+        avg = _CONFIG.get("last_avg_seconds_per_note")
+        if isinstance(avg, (int, float)) and avg > 0:
+            return float(avg) * notes
+        return None
+
+    # Normal equations for multiple linear regression with intercept:
+    # t ≈ a * notes + b * chars + c
+    #
+    # Solve:
+    # [ m   Σn   Σc ] [ c ]   [ Σt  ]
+    # [ Σn Σn2  Σnc] [ a ] = [ Σnt ]
+    # [ Σc Σnc Σc2] [ b ]   [ Σct ]
+
+    m = float(len(samples))
+    S_n = S_c = S_t = 0.0
+    S_nn = S_cc = S_nc = 0.0
+    S_nt = S_ct = 0.0
+
+    for n, c, t in samples:
+        S_n += n
+        S_c += c
+        S_t += t
+        S_nn += n * n
+        S_cc += c * c
+        S_nc += n * c
+        S_nt += n * t
+        S_ct += c * t
+
+    # Build and solve the 3x3 system using simple Gaussian elimination.
+    A = [
+        [m, S_n, S_c],
+        [S_n, S_nn, S_nc],
+        [S_c, S_nc, S_cc],
+    ]
+    b = [S_t, S_nt, S_ct]
+
+    try:
+        # Forward elimination
+        for i in range(3):
+            # Pivot
+            pivot = A[i][i]
+            if abs(pivot) < 1e-9:
+                # Singular or ill-conditioned; fall back to simpler estimate.
+                raise ZeroDivisionError
+            inv_pivot = 1.0 / pivot
+            for j in range(i, 3):
+                A[i][j] *= inv_pivot
+            b[i] *= inv_pivot
+
+            # Eliminate below
+            for k in range(i + 1, 3):
+                factor = A[k][i]
+                for j in range(i, 3):
+                    A[k][j] -= factor * A[i][j]
+                b[k] -= factor * b[i]
+
+        # Back substitution
+        c0 = b[2]
+        c1 = b[1] - A[1][2] * c0
+        c2 = b[0] - A[0][1] * c1 - A[0][2] * c0
+
+        # c2 is intercept, c1 is coefficient for notes, c0 for chars.
+        a_notes = c1
+        b_chars = c0
+        c_intercept = c2
+
+        est = c_intercept + a_notes * float(notes) + b_chars * float(chars)
+        if est <= 0:
+            return None
+        return est
+    except Exception:
+        # Fallback: character-based average if possible.
+        total_chars = sum(c for _, c, _ in samples)
+        total_sec = sum(s for _, _, s in samples)
+        if total_chars > 0:
+            avg_per_char = total_sec / total_chars
+            return avg_per_char * max(chars, 0)
+        return None
 
 
 def _try_load_melotts() -> bool:
@@ -693,6 +835,8 @@ def _synthesize_to_tempfile(
 
     assert mode in ("remote_only", "local_only", "auto")
 
+    effective_speed = _get_effective_speed()
+
     # Helper to perform local synthesis.
     def _local_synth() -> bool:
         # Ensure MeloTTS is loaded first (lazy load on first use)
@@ -706,6 +850,7 @@ def _synthesize_to_tempfile(
                 synthesize_korean_tts(
                     korean_text,
                     temp_path,
+                    speed=effective_speed,
                     device="auto",
                 )
                 return True
@@ -726,7 +871,11 @@ def _synthesize_to_tempfile(
                 list(speaker_ids.values())[0],
             )
             model.tts_to_file(
-                korean_text, speaker_id, temp_path, quiet=True
+                korean_text,
+                speaker_id,
+                temp_path,
+                quiet=True,
+                speed=effective_speed,
             )
             return True
         except Exception as e:
@@ -739,7 +888,7 @@ def _synthesize_to_tempfile(
             return _REMOTE_TTS_ENABLED and _remote_synthesize_korean_tts(
                 korean_text,
                 temp_path,
-                speed=1.0,
+                speed=effective_speed,
             )
         except Exception as e:
             print(f"Remote synth failed: {e}", file=sys.stderr)
@@ -969,10 +1118,12 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
         showInfo("No notes found in collection.")
         return
 
-    # Pre-scan deck to count how many notes actually need (re)generation. This
-    # also serves to make the confirmation message accurate and gives us a hook
-    # to surface an ETA when we have timing stats from previous runs.
+    # Pre-scan deck to count how many notes actually need (re)generation and
+    # the total number of Korean characters involved. This serves to make the
+    # confirmation message accurate and gives us a hook to surface an ETA when
+    # we have timing stats from previous runs.
     to_generate = 0
+    total_chars_to_generate = 0
     for note_id in note_ids:
         try:
             note = mw.col.get_note(note_id)
@@ -994,6 +1145,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
             )
             if should_gen:
                 to_generate += 1
+                total_chars_to_generate += len(korean_text)
         except Exception:
             # Best-effort; skip problematic notes during estimation.
             continue
@@ -1017,11 +1169,13 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
     ]
 
     try:
-        avg = _CONFIG.get("last_avg_seconds_per_note")
-        if isinstance(avg, (int, float)) and avg > 0:
-            eta = avg * to_generate
-            lines.append(f"Estimated runtime (based on last run): ~{eta:.1f} seconds.")
+        eta = _estimate_eta_seconds(to_generate, total_chars_to_generate)
+        if isinstance(eta, (int, float)) and eta > 0:
+            lines.append(
+                f"Estimated runtime (based on previous runs): ~{eta:.1f} seconds."
+            )
     except Exception:
+        # ETA is best-effort; failures here should not block generation.
         pass
 
     lines.append("")
@@ -1210,7 +1364,7 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
 
     elapsed = time.time() - start_time
 
-    # Persist simple timing stats for future estimates.
+    # Persist simple timing stats and ETA history for future estimates.
     try:
         if generated > 0 and not cancelled:
             avg = elapsed / max(generated, 1)
@@ -1218,6 +1372,11 @@ def _batch_generate_tts_impl(*, mode: str) -> None:
             _CONFIG["last_batch_total_notes"] = total_notes
             _CONFIG["last_batch_timestamp"] = time.time()
             _save_addon_config(_CONFIG)
+            _record_eta_sample(
+                notes=generated,
+                chars=total_chars_to_generate,
+                seconds=elapsed,
+            )
     except Exception:
         # Stats are best-effort; failures here should not break generation.
         pass
@@ -1364,7 +1523,8 @@ if _ANKI_GUI_AVAILABLE:
                     raw_speed = 1.0
             speed_val = float(raw_speed if raw_speed is not None else 1.0)
 
-            self.speed_slider = QSlider(Qt.Horizontal, self)
+            # Qt6 exposes orientation enums via Qt.Orientation.*
+            self.speed_slider = QSlider(Qt.Orientation.Horizontal, self)
             self.speed_slider.setMinimum(10)   # 0.10x
             self.speed_slider.setMaximum(200)  # 2.00x
             self.speed_slider.setSingleStep(5)
